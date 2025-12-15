@@ -66,8 +66,7 @@ RUN pip install --no-cache-dir \
 
 # Install requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --upgrade huggingface_hub && \
-    # pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --upgrade huggingface_hub
 
 RUN git clone https://github.com/facebookresearch/sam3.git && \
     cd sam3 && \
