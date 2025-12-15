@@ -37,7 +37,7 @@ ENV HF_HUB_ENABLE_HF_TRANSFER=1
 ENV HF_XET_HIGH_PERFORMANCE=1
 
 # Set up the working directory
-ARG WORKSPACE_DIR=/workspace/app
+ARG WORKSPACE_DIR=/app
 ENV WORKSPACE_DIR=${WORKSPACE_DIR}
 WORKDIR $WORKSPACE_DIR
 
@@ -65,11 +65,9 @@ RUN pip install --no-cache-dir \
     runpod
 
 # Install requirements.txt
-# COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --upgrade huggingface_hub && \
-    # pip install --no-cache-dir -r requirements.txt && \
-    pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
+    # pip install --no-cache-dir -r requirements.txt
 
 RUN git clone https://github.com/facebookresearch/sam3.git && \
     cd sam3 && \
@@ -78,12 +76,12 @@ RUN git clone https://github.com/facebookresearch/sam3.git && \
 # Copy all of our files into the container
 # COPY handler.py $WORKSPACE_DIR/handler.py
 COPY sam3/server.py $WORKSPACE_DIR/sam3/server.py
-COPY start.sh $WORKSPACE_DIR/start.sh
+COPY start.sh /start.sh
 
 # Make sure start.sh is executable
-RUN chmod +x start.sh
+RUN chmod +x /start.sh
 
 # Make sure that the start.sh is in the path
-RUN ls -la $WORKSPACE_DIR/start.sh
+RUN ls -la /start.sh
 
-CMD $WORKSPACE_DIR/start.sh
+CMD /start.sh
