@@ -37,7 +37,7 @@ setup_ssh() {
 
 setup_vllm() {
     pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
-    vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.7 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+    vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
 }
 
 # Generate SSH host keys
