@@ -75,9 +75,6 @@ RUN git clone https://github.com/facebookresearch/sam3.git && \
     cd sam3 && \
     pip install -e .    
 
-# Delete the default start.sh file from Runpod (so we can replace it with our own below)
-RUN rm ../start.sh 2>/dev/null || true
-
 # Copy all of our files into the container
 # COPY handler.py $WORKSPACE_DIR/handler.py
 COPY sam3/server.py $WORKSPACE_DIR/sam3/server.py
