@@ -84,7 +84,7 @@ case $MODE_TO_RUN in
         ;;
     pod)
         echo "Running in pod mode"
-        start_jupyter
+        # start_jupyter
         ;;
     *)
         echo "Invalid MODE_TO_RUN value: $MODE_TO_RUN. Expected 'serverless', 'pod', or 'both'."
