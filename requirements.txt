@@ -13,3 +13,7 @@ numpy>=1.24
 # Deep learning
 torch>=2.0
 einops>=0.7
+
+pycocotools>=2.0.11
+psutil>=7.1.3
+decord>=0.6.0
