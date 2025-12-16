@@ -35,9 +35,22 @@ setup_ssh() {
     fi
 }
 
+setup_sam3() {
+    echo "copying sam3 files..."
+    cp -r /app/sam3 /workspace/segmentation/sam3
+}
+
+start_sam3() {
+    cd /workspace/segmentation/sam3
+    source /app/venv
+    python server.py --port=$SAM3_PORT
+}
+
 setup_vllm() {
-    pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
-    vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+    if [[ $USE_VLLM ]]; then
+        pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
+        vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+    fi
 }
 
 # Generate SSH host keys
@@ -76,6 +89,7 @@ start_nginx
 echo "Pod Started"
 
 setup_ssh
+setup_sam3
 
 case $MODE_TO_RUN in
     serverless)
@@ -84,7 +98,7 @@ case $MODE_TO_RUN in
         ;;
     pod)
         echo "Running in pod mode"
-        # start_jupyter
+        start_sam3
         ;;
     *)
         echo "Invalid MODE_TO_RUN value: $MODE_TO_RUN. Expected 'serverless', 'pod', or 'both'."
@@ -94,7 +108,8 @@ esac
 
 export_env_vars
 
-# setup_vllm
+setup_vllm
+start_sam3
 
 echo "Start script(s) finished"
 

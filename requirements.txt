@@ -1,0 +1,15 @@
+# Web server
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# Async + config
+python-dotenv>=1.0
+aiohttp>=3.9
+
+# Image processing
+pillow>=10.0
+numpy>=1.24
+
+# Deep learning
+torch>=2.0
+einops>=0.7

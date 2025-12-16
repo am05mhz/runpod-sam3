@@ -22,9 +22,14 @@ ENV ARG_CUDA_VERSION=${CUDA_VERSION}
 ARG MODE_TO_RUN=pod
 ENV MODE_TO_RUN=$MODE_TO_RUN
 
-# set vllm port
+# ARG USE_VLLM=0
+# ENV USE_VLLM=$USE_VLLM
+
+# set ports
 ARG VLLM_PORT=8080
 ENV VLLM_PORT=$VLLM_PORT
+ARG SAM3_PORT=8080
+ENV SAM3_PORT=$SAM3_PORT
 
 # Set the default workspace directory
 ENV RP_WORKSPACE=/workspace
@@ -65,8 +70,10 @@ RUN pip install --no-cache-dir \
     runpod
 
 # Install requirements.txt
+COPY requirements.txt /
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --upgrade huggingface_hub
+    pip install --no-cache-dir --upgrade huggingface_hub && \
+    pip install --no-cache-dir -r requirements.txt
 
 RUN git clone https://github.com/facebookresearch/sam3.git && \
     cd sam3 && \
