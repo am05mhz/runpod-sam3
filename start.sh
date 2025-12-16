@@ -94,7 +94,7 @@ esac
 
 export_env_vars
 
-setup_vllm
+# setup_vllm
 
 echo "Start script(s) finished"
 
