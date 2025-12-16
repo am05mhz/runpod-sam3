@@ -37,12 +37,12 @@ setup_ssh() {
 
 setup_sam3() {
     echo "copying sam3 files..."
-    cp -r /app/sam3 /workspace/segmentation/sam3
+    cp -r /app/sam3 /workspace/segmentation/
 }
 
 start_sam3() {
     cd /workspace/segmentation/sam3
-    source /app/venv
+    source /app/venv/bin/activate
     python server.py --port=$SAM3_PORT
 }
 
