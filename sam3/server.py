@@ -52,6 +52,9 @@ def resize_mask_to_original(
 
     # ---- Ensure mask is 2D ----
     mask = np.asarray(mask)
+    # Remove singleton dimensions
+    if mask.ndim == 3:
+        mask = np.squeeze(mask)
     if mask.ndim != 2:
         raise ValueError(f"Mask must be 2D before resize, got {mask.shape}")
 

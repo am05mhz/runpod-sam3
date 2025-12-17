@@ -22,7 +22,7 @@ start_nginx() {
 
 # Setup ssh
 setup_ssh() {
-    if [ $PUBLIC_KEY ]; then
+    if [[ $PUBLIC_KEY ]]; then
         echo "Setting up SSH..."
         mkdir -p ~/.ssh
         echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys
@@ -47,16 +47,18 @@ setup_sam3() {
 }
 
 start_sam3() {
-    echo "starting sam3 files..."
+    echo "starting sam3..."
     cd /workspace/segmentation/sam3
     source /app/venv/bin/activate
     python server.py --port=$SAM3_PORT
 }
 
 setup_vllm() {
-    if [ $USE_VLLM ]; then
+    echo "setup vllm..."
+    if [[ $USE_VLLM ]]; then
         pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
-        vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+        echo "starting vllm..."
+        vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.55 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
     fi
 }
 
