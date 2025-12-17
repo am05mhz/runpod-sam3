@@ -41,25 +41,34 @@ def resize_mask_to_original(
     original_size: tuple[int, int],
 ) -> np.ndarray:
     """
-    Resize a binary mask to original image size.
-
-    Args:
-        mask: (H, W) boolean or uint8 mask
-        original_size: (orig_h, orig_w)
-
-    Returns:
-        (orig_h, orig_w) boolean mask
+    Safely resize a binary mask to original image size.
+    Handles empty masks and invalid sizes.
     """
     orig_h, orig_w = original_size
 
-    if mask.shape[0] == orig_h and mask.shape[1] == orig_w:
+    # ---- Validate original image size ----
+    if orig_h <= 0 or orig_w <= 0:
+        raise ValueError(f"Invalid original image size: {original_size}")
+
+    # ---- Ensure mask is 2D ----
+    mask = np.asarray(mask)
+    if mask.ndim != 2:
+        raise ValueError(f"Mask must be 2D before resize, got {mask.shape}")
+
+    h, w = mask.shape
+
+    # ---- Empty mask: return empty mask at original size ----
+    if h == 0 or w == 0 or mask.sum() == 0:
+        return np.zeros((orig_h, orig_w), dtype=bool)
+
+    # ---- No resize needed ----
+    if h == orig_h and w == orig_w:
         return mask.astype(bool)
 
-    mask_uint8 = mask.astype(np.uint8)
-
+    # ---- Resize safely ----
     resized = cv2.resize(
-        mask_uint8,
-        (orig_w, orig_h),   # cv2 uses (W, H)
+        mask.astype(np.uint8),
+        (orig_w, orig_h),   # (W, H)
         interpolation=cv2.INTER_NEAREST
     )
 
@@ -226,13 +235,17 @@ async def run_sam_inference(
                 mask = masks[i]
                 if isinstance(mask, torch.Tensor):
                     mask = mask.cpu().numpy()
+
+                # Resize to original image size
                 mask = resize_mask_to_original(
                     mask=mask,
                     original_size=(image.shape[0], image.shape[1]),
                 )
 
                 area = int(mask.sum())
-                if area < min_area:
+
+                # Skip empty / tiny masks
+                if area == 0 or area < min_area:
                     continue
 
                 box_i = boxes[i]
