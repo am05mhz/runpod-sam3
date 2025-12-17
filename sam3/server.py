@@ -10,11 +10,10 @@ import base64
 import traceback
 import asyncio
 import aiohttp
-import torch
 import cv2
 from PIL import Image
-from sam3.model_builder import build_sam3_image_model
-from sam3.model.sam3_image_processor import Sam3Processor
+import torch
+from transformers import Sam3Model, Sam3Processor, Sam3TrackerModel, Sam3TrackerProcessor
 import os
 import argparse
 from dotenv import load_dotenv
@@ -26,8 +25,11 @@ load_dotenv()
 # -------------------------
 print("Loading SAM3 model...")
 
-_model = build_sam3_image_model()
-_processor = Sam3Processor(_model)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+hf_sam3_tmodel = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
+hf_sam3_tprocessor = Sam3TrackerProcessor.from_pretrained("facebook/sam3")
+hf_sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
+hf_sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
 
 print("SAM3 model loaded.")
 
@@ -114,15 +116,6 @@ def get_server_port():
     # --- Default ---
     return 8000
 
-def read_imagefile_to_numpy(file: UploadFile) -> np.ndarray:
-    contents = file.file.read()
-    try:
-        img = Image.open(io.BytesIO(contents)).convert("RGB")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not read image: {e}")
-    arr = np.array(img)
-    return arr
-
 def mask_to_base64_png(mask: np.ndarray) -> str:
     """
     Convert a SAM3 mask to base64 PNG.
@@ -160,119 +153,104 @@ def bbox_from_mask(mask: np.ndarray) -> List[int]:
     h = y_max - y_min + 1
     return [int(x_min), int(y_min), int(w), int(h)]
 
+def x1y1x2y2_to_xywh(box):
+    x1, y1, x2, y2 = box
+    return [x1, y1, x2 - x1, y2 - y1]
+
 # -----------------------
 # SAM inference wrapper
 # -----------------------
 async def run_sam_inference(
     image: np.ndarray,
-    prompt: Optional[str] = None,
-    points: Optional[List[List[int]]] = None,        # [[x,y], ...]
-    point_labels: Optional[List[int]] = None,        # [1, 0, ...]
-    box: Optional[List[int]] = None,                 # [x1,y1,x2,y2]
+    prompt: str | None = None,
+    points: list[list[int]] | None = None,
+    point_labels: list[int] | None = None,
+    box: list[int] | None = None,
     min_area: int = 0,
-) -> List[Dict[str, Any]]:
+) -> list[dict]:
     """
-    Async SAM3 inference with:
-      - text (concept) prompt
-      - visual prompts: points + labels, and box
+    Async SAM3 inference using Hugging Face transformers SAM3 model.
+    Supports:
+      - text_prompt (string)
+      - box prompt ([x0,y0,x1,y1]) optionally
+    Returns list of dicts: {mask: np.ndarray, bbox: [x,y,w,h], score: float}
     """
+
     def _worker():
         try:
+            # Convert numpy -> PIL
             pil_img = Image.fromarray(image)
 
-            # 1) Set image
-            inference_state = _processor.set_image(pil_img)
+            if points is None:
+                # Build inputs for processor
+                # boxes and labels must be lists for HF API
+                hf_inputs = hf_sam3_processor(
+                    images=pil_img,
+                    text=prompt,
+                    # input_points=points if points else None,
+                    # input_labels=point_labels if points else None,
+                    input_boxes=[[box]] if box else None,
+                    input_boxes_labels=[[1]] if box else None,
+                    return_tensors="pt"
+                ).to(device)
 
-            # 2) Handle prompts
-            # First handle text prompt (concept prompt)
-            if prompt:
-                out = _processor.set_text_prompt(
-                    state=inference_state,
-                    prompt=prompt,
-                )
+                with torch.no_grad():
+                    outputs = hf_sam3_model(**hf_inputs)
+
+                # Post-process to get masks & boxes
+                results = hf_sam3_processor.post_process_instance_segmentation(
+                    outputs,
+                    threshold=0.5,                          # score threshold
+                    mask_threshold=0.5,                     # binarize mask
+                    target_sizes=hf_inputs.get("original_sizes").tolist()
+                )[0]  # first image only
+
             else:
-                out = None
+                labels = point_labels or [1] * len(points)
+                hf_inputs = hf_sam3_tprocessor(
+                    images=pil_img,
+                    input_points=[points],
+                    input_labels=[point_labels],
+                ).to(hf_sam3_tmodel.device)
 
-            # Then handle visual prompts
-            if points is not None or box is not None:
-                # Convert points
-                pt_coords = None
-                pt_lbls = None
-                if points is not None:
-                    pt_coords = torch.tensor(points, dtype=torch.float32)
-                    if point_labels is None:
-                        pt_lbls = torch.ones(len(points), dtype=torch.int64)
-                    else:
-                        pt_lbls = torch.tensor(point_labels, dtype=torch.int64)
+                with torch.no_grad():
+                    outputs = hf_sam3_tmodel(**hf_inputs)
 
-                # Convert box
-                box_coords = None
-                if box is not None:
-                    box_coords = torch.tensor([box], dtype=torch.float32)
+                results = processor.post_process_masks(outputs.pred_masks.cpu(), hf_inputs["original_sizes"])[0]
 
-                vis_out = _processor.set_visual_prompt(
-                    state=inference_state,
-                    point_coords=pt_coords,
-                    point_labels=pt_lbls,
-                    box_coords=box_coords,
-                )
-                # If text was also given, concatenate outputs
-                if out is None:
-                    out = vis_out
-                else:
-                    # Merge text + visual results
-                    # We simply append masks/boxes/scores
-                    out["masks"] += vis_out.get("masks", [])
-                    out["boxes"] += vis_out.get("boxes", [])
-                    out["scores"] += vis_out.get("scores", [])
+            masks = results["masks"]   # NxHxW boolean or [0,1] float
+            boxes_out = results["boxes"]  # Nx4 xyxy
+            scores = results["scores"]    # N
 
-            if out is None:
-                raise RuntimeError("No prompt provided")
+            out_list = []
+            orig_h, orig_w = image.shape[:2]
 
-            masks = out.get("masks", [])
-            boxes = out.get("boxes", [])
-            scores = out.get("scores", [])
-
-            results = []
             for i in range(len(masks)):
-                mask = masks[i]
-                if isinstance(mask, torch.Tensor):
-                    mask = mask.cpu().numpy()
+                mask = masks[i].cpu().numpy().astype(bool)
 
-                # Resize to original image size
-                mask = resize_mask_to_original(
-                    mask=mask,
-                    original_size=(image.shape[0], image.shape[1]),
-                )
-
+                # Clean/truncate tiny masks
                 area = int(mask.sum())
-
-                # Skip empty / tiny masks
-                if area == 0 or area < min_area:
+                if area < min_area:
                     continue
 
-                box_i = boxes[i]
-                if isinstance(box_i, torch.Tensor):
-                    box_i = box_i.cpu().numpy().tolist()
+                # Convert box xyxy -> [x,y,w,h]
+                x0, y0, x1, y1 = map(int, boxes_out[i].tolist())
+                bbox = [x0, y0, x1 - x0, y1 - y0]
 
-                # Convert xyxy to [x, y, w, h]
-                x1, y1, x2, y2 = map(int, box_i)
-                bbox = [x1, y1, x2 - x1, y2 - y1]
-
-                score_val = float(scores[i]) if scores is not None else None
-
-                results.append({
+                out_list.append({
                     "mask": mask,
                     "bbox": bbox,
-                    "score": score_val,
+                    "score": float(scores[i].item()) if scores is not None else None
                 })
 
-            return results
+            return out_list
 
         except Exception as e:
             import traceback
-            raise RuntimeError(f"SAM3 inference error:\n{traceback.format_exc()}")
+            tb = traceback.format_exc()
+            raise RuntimeError(f"SAM3 HF inference error:\n{e}\n{tb}")
 
+    # Run heavy work in thread
     return await asyncio.to_thread(_worker)
 
 # -----------------------
