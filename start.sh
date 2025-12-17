@@ -37,8 +37,9 @@ setup_ssh() {
 
 setup_sam3() {
     echo "copying sam3 files..."
+    id -u -n
     chown -R root:root /workspace/segmentation
-    cp -r /app/sam3 /workspace/segmentation/
+    cp -r /app/sam3 /workspace/segmentation/ 2>/dev/null
     chown -R root:root /workspace/segmentation  # reapply the ownership after copy
     chmod -R a+rwx /workspace/segmentation
 }
