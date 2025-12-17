@@ -22,7 +22,7 @@ start_nginx() {
 
 # Setup ssh
 setup_ssh() {
-    if [[ $PUBLIC_KEY ]]; then
+    if [ $PUBLIC_KEY ]; then
         echo "Setting up SSH..."
         mkdir -p ~/.ssh
         echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys
@@ -38,20 +38,23 @@ setup_ssh() {
 setup_sam3() {
     echo "copying sam3 files..."
     id -u -n
-    chown -R root:root /workspace/segmentation
-    cp -r /app/sam3 /workspace/segmentation/ 2>/dev/null
-    chown -R root:root /workspace/segmentation  # reapply the ownership after copy
-    chmod -R a+rwx /workspace/segmentation
+    if [ ! -f "/var/www/my_folder/reports.html" ]; then
+        chown -R root:root /workspace/segmentation
+        cp -r /app/sam3 /workspace/segmentation/ 2>/dev/null
+        chown -R root:root /workspace/segmentation  # reapply the ownership after copy
+        chmod -R a+rwx /workspace/segmentation
+    fi
 }
 
 start_sam3() {
+    echo "starting sam3 files..."
     cd /workspace/segmentation/sam3
     source /app/venv/bin/activate
     python server.py --port=$SAM3_PORT
 }
 
 setup_vllm() {
-    if [[ $USE_VLLM ]]; then
+    if [ $USE_VLLM ]; then
         pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
         vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.95 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
     fi
