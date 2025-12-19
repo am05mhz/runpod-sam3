@@ -39,6 +39,9 @@ setup_sam3() {
     echo "copying sam3 files..."
     id -u -n
     if [ ! -d "/workspace/segmentation/sam3" ]; then
+        if [ ! -d "/workspace/segmentation" ]; then
+            mkdir -p /workspace/segmentation
+        fi
         chown -R root:root /workspace/segmentation
         cp -r /app/sam3 /workspace/segmentation/ 2>/dev/null
         chown -R root:root /workspace/segmentation  # reapply the ownership after copy
