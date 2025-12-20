@@ -127,9 +127,17 @@ def mask_to_base64_png(mask: np.ndarray) -> str:
     # Convert to numpy
     mask = np.asarray(mask)
 
-    # Remove singleton dimensions
-    if mask.ndim == 3:
-        mask = np.squeeze(mask)
+    # --- Handle SAM3 multi-mask output (K, H, W) ---
+    if mask.ndim == 3 and mask.shape[0] > 1:
+        # Choose the mask with the largest foreground area
+        areas = mask.sum(axis=(1, 2))
+        mask = mask[areas.argmax()]
+
+    # --- Handle singleton dimensions ---
+    if mask.ndim == 3 and mask.shape[0] == 1:
+        mask = mask[0]
+    elif mask.ndim == 3 and mask.shape[-1] == 1:
+        mask = mask[:, :, 0]
 
     if mask.ndim != 2:
         raise ValueError(f"Invalid mask shape after squeeze: {mask.shape}")
@@ -181,14 +189,12 @@ async def run_sam_inference(
             # Convert numpy -> PIL
             pil_img = Image.fromarray(image)
 
-            if points is None:
+            if prompt is not None:
                 # Build inputs for processor
                 # boxes and labels must be lists for HF API
                 hf_inputs = hf_sam3_processor(
                     images=pil_img,
                     text=prompt,
-                    # input_points=points if points else None,
-                    # input_labels=point_labels if points else None,
                     input_boxes=[[box]] if box else None,
                     input_boxes_labels=[[1]] if box else None,
                     return_tensors="pt"
@@ -200,27 +206,33 @@ async def run_sam_inference(
                 # Post-process to get masks & boxes
                 results = hf_sam3_processor.post_process_instance_segmentation(
                     outputs,
-                    threshold=0.5,                          # score threshold
-                    mask_threshold=0.5,                     # binarize mask
+                    threshold=0.8,                          # score threshold
+                    mask_threshold=0.8,                     # binarize mask
                     target_sizes=hf_inputs.get("original_sizes").tolist()
                 )[0]  # first image only
 
             else:
-                labels = point_labels or [1] * len(points)
+                labels = (point_labels or [1] * len(points)) if points else None
                 hf_inputs = hf_sam3_tprocessor(
                     images=pil_img,
-                    input_points=[points],
-                    input_labels=[point_labels],
+                    input_points=[[points]] if points else None,
+                    input_labels=[[labels]] if points else None,
+                    input_boxes=[[box]] if box else None,
+                    return_tensors="pt"
                 ).to(hf_sam3_tmodel.device)
 
                 with torch.no_grad():
                     outputs = hf_sam3_tmodel(**hf_inputs)
 
-                results = processor.post_process_masks(outputs.pred_masks.cpu(), hf_inputs["original_sizes"])[0]
+                results = {
+                    "masks": hf_sam3_tprocessor.post_process_masks(outputs.pred_masks.cpu(), hf_inputs["original_sizes"])[0],
+                    "boxes": [],
+                    "scores": [],
+                }
 
             masks = results["masks"]   # NxHxW boolean or [0,1] float
-            boxes_out = results["boxes"]  # Nx4 xyxy
-            scores = results["scores"]    # N
+            # boxes_out = results["boxes"]  # Nx4 xyxy
+            # scores = results["scores"]    # N
 
             out_list = []
             orig_h, orig_w = image.shape[:2]
@@ -234,13 +246,13 @@ async def run_sam_inference(
                     continue
 
                 # Convert box xyxy -> [x,y,w,h]
-                x0, y0, x1, y1 = map(int, boxes_out[i].tolist())
-                bbox = [x0, y0, x1 - x0, y1 - y0]
+                # x0, y0, x1, y1 = map(int, boxes_out[i].tolist())
+                # bbox = [x0, y0, x1 - x0, y1 - y0]
 
                 out_list.append({
                     "mask": mask,
-                    "bbox": bbox,
-                    "score": float(scores[i].item()) if scores is not None else None
+                    # "bbox": bbox,
+                    # "score": float(scores[i].item()) if scores is not None else None
                 })
 
             return out_list
@@ -323,10 +335,10 @@ async def segment_endpoint(
 
         segments_out.append({
             "id": idx,
-            "bbox": seg["bbox"],
+            # "bbox": seg["bbox"],
             "mask_base64": mask_b64,
             "area": int(mask.sum()),
-            "score": seg["score"]
+            # "score": seg["score"]
         })
 
     return {"segments": segments_out, "num_segments": len(segments_out)}
