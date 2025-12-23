@@ -41,7 +41,9 @@ setup_sam3() {
         mkdir -p /workspace/apps
     fi
     cd /workspace/apps
-    git clone https://github.com/facebookresearch/sam3.git
+    if [ ! -d "/workspace/apps/sam3" ]; then
+        git clone https://github.com/facebookresearch/sam3.git
+    fi
     cd sam3
     pip install --upgrade --no-cache-dir -e .
     cp -r /app/sam3/server.py /workspace/apps/sam3/
@@ -53,7 +55,9 @@ setup_supersvg() {
         mkdir -p /workspace/apps
     fi
     cd /workspace/apps
-    git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
+    if [ ! -d "/workspace/apps/supersvg" ]; then
+        git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
+    fi
     cd supersvg
     pip install --upgrade --no-cache-dir -e .
     cp -r /app/supersvg/* /workspace/apps/supersvg/
@@ -65,7 +69,9 @@ setup_bezier() {
         mkdir -p /workspace/apps
     fi
     cd /workspace/apps
-    git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
+    if [ ! -d "/workspace/apps/bezier" ]; then
+        git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
+    fi
     cd bezier
     pip install --upgrade --no-cache-dir -e .
     cp -r /app/bezier/server.py /workspace/apps/bezier/
@@ -124,8 +130,8 @@ echo "Pod Started"
 
 setup_ssh
 setup_sam3
-setup_supersvg
 setup_bezier
+setup_supersvg
 
 case $MODE_TO_RUN in
     serverless)
