@@ -175,6 +175,7 @@ async def run_sam_inference(
     point_labels: list[int] | None = None,
     box: list[int] | None = None,
     min_area: int = 0,
+    get_labels: bool = False,
 ) -> list[dict]:
     """
     Async SAM3 inference using Hugging Face transformers SAM3 model.
@@ -226,8 +227,8 @@ async def run_sam_inference(
 
                 results = {
                     "masks": hf_sam3_tprocessor.post_process_masks(outputs.pred_masks.cpu(), hf_inputs["original_sizes"])[0],
-                    "boxes": [],
-                    "scores": [],
+                    # "boxes": [],
+                    # "scores": [],
                 }
 
             masks = results["masks"]   # NxHxW boolean or [0,1] float
@@ -339,6 +340,67 @@ async def segment_endpoint(
             "mask_base64": mask_b64,
             "area": int(mask.sum()),
             # "score": seg["score"]
+        })
+
+    return {"segments": segments_out, "num_segments": len(segments_out)}
+
+@app.post("/segment")
+async def segment_endpoint(
+    # One of these must be provided
+    image: UploadFile = File(None),
+    image_url: Optional[str] = Form(None),
+
+    # Prompts
+    prompt: Optional[str] = Form(None),
+
+    min_area: Optional[int] = Form(0),
+):
+    # -----------------------------
+    # Load image (file OR URL)
+    # -----------------------------
+    if image is None and image_url is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Either 'image' file or 'image_url' must be provided"
+        )
+
+    if image is not None and image_url is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide only one of 'image' or 'image_url'"
+        )
+
+    if image_url:
+        pil_img = await load_image_from_url(image_url)
+    else:
+        contents = await image.read()
+        try:
+            pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception as e:
+            raise HTTPException(400, f"Could not decode uploaded image: {e}")
+
+    img_np = np.array(pil_img)
+
+    original_h, original_w = img_np.shape[:2]
+
+    # async SAM3 inference
+    sam_outputs = await run_sam_inference(
+        image=img_np,
+        prompt=prompt,
+        min_area=min_area,
+        get_labels=True,
+    )
+
+    segments_out = []
+    for idx, seg in enumerate(sam_outputs):
+        mask = seg["mask"]
+        label = seg["label"]
+        mask_b64 = mask_to_base64_png(mask)
+
+        segments_out.append({
+            "id": idx,
+            "mask_base64": mask_b64,
+            "label": label,
         })
 
     return {"segments": segments_out, "num_segments": len(segments_out)}

@@ -75,13 +75,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --upgrade huggingface_hub && \
     pip install --no-cache-dir --pre -r requirements.txt
 
-RUN git clone https://github.com/facebookresearch/sam3.git && \
-    cd sam3 && \
-    pip install -e .    
+# RUN git clone https://github.com/facebookresearch/sam3.git && \
+#     cd sam3 && \
+#     pip install -e .    
 
 # Copy all of our files into the container
 # COPY handler.py $WORKSPACE_DIR/handler.py
 COPY sam3/server.py $WORKSPACE_DIR/sam3/server.py
+COPY bezier/server.py $WORKSPACE_DIR/bezier/server.py
+COPY supersvg/server.py $WORKSPACE_DIR/supersvg/server.py
+ADD supersvg/ckpts $WORKSPACE_DIR/supersvg/ckpts
 COPY start.sh /start.sh
 
 # Make sure start.sh is executable

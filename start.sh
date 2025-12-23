@@ -36,22 +36,44 @@ setup_ssh() {
 }
 
 setup_sam3() {
-    echo "copying sam3 files..."
-    id -u -n
-    if [ ! -d "/workspace/segmentation/sam3" ]; then
-        if [ ! -d "/workspace/segmentation" ]; then
-            mkdir -p /workspace/segmentation
-        fi
-        chown -R root:root /workspace/segmentation
-        cp -r /app/sam3 /workspace/segmentation/ 2>/dev/null
-        chown -R root:root /workspace/segmentation  # reapply the ownership after copy
-        chmod -R a+rwx /workspace/segmentation
+    echo "installing sam3..."
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
     fi
+    cd /workspace/apps
+    git clone https://github.com/facebookresearch/sam3.git
+    cd sam3
+    pip install -e .
+    cp -r /app/sam3/server.py /workspace/apps/sam3/
+}
+
+setup_supersvg() {
+    echo "installing supersvg..."
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
+    fi
+    cd /workspace/apps
+    git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
+    cd supersvg
+    pip install -e .
+    cp -r /app/supersvg/* /workspace/apps/supersvg/
+}
+
+setup_bezier() {
+    echo "installing bezier splatting..."
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
+    fi
+    cd /workspace/apps
+    git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
+    cd bezier
+    pip install -e .
+    cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
 start_sam3() {
     echo "starting sam3..."
-    cd /workspace/segmentation/sam3
+    cd /workspace/apps/sam3
     source /app/venv/bin/activate
     python server.py --port=$SAM3_PORT
 }
@@ -102,6 +124,8 @@ echo "Pod Started"
 
 setup_ssh
 setup_sam3
+setup_supersvg
+setup_bezier
 
 case $MODE_TO_RUN in
     serverless)
@@ -120,8 +144,8 @@ esac
 
 export_env_vars
 
-setup_vllm
-start_sam3
+# setup_vllm
+# start_sam3
 
 echo "Start script(s) finished"
 
