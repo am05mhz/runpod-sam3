@@ -43,7 +43,7 @@ setup_sam3() {
     cd /workspace/apps
     git clone https://github.com/facebookresearch/sam3.git
     cd sam3
-    pip install -e .
+    pip install --upgrade --no-cache-dir -e .
     cp -r /app/sam3/server.py /workspace/apps/sam3/
 }
 
@@ -55,7 +55,7 @@ setup_supersvg() {
     cd /workspace/apps
     git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     cd supersvg
-    pip install -e .
+    pip install --upgrade --no-cache-dir -e .
     cp -r /app/supersvg/* /workspace/apps/supersvg/
 }
 
@@ -67,7 +67,7 @@ setup_bezier() {
     cd /workspace/apps
     git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     cd bezier
-    pip install -e .
+    pip install --upgrade --no-cache-dir -e .
     cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
