@@ -77,12 +77,12 @@ setup_bezier() {
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     fi
     cp -r /app/bezier /workspace/apps/
-    cd bezier
+    cd /workspace/apps/bezier
     pip install --upgrade --no-cache-dir -r requirements.txt
     if [ ! -d "/workspace/apps/bezier/gsplat" ]; then
         git clone https://github.com/XingtongGe/gsplat.git
     fi
-    cd gsplat
+    cd /workspace/apps/bezier/gsplat
     ls -la
     pip install -e .
 }
