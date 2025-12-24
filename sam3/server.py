@@ -116,6 +116,18 @@ def get_server_port():
     # --- Default ---
     return 8000
 
+def image_from_base64(b64_string):
+    """Convert base64 string to PIL Image."""
+    image_data = base64.b64decode(b64_string)
+    return Image.open(BytesIO(image_data)).convert('RGB')
+
+def masks_to_base64(masks):
+    """Convert numpy masks to base64 encoded compressed format."""
+    buffer = BytesIO()
+    np.savez_compressed(buffer, masks=masks)
+    buffer.seek(0)
+    return base64.b64encode(buffer.read()).decode('utf-8')
+
 def mask_to_base64_png(mask: np.ndarray) -> str:
     """
     Convert a SAM3 mask to base64 PNG.
@@ -175,7 +187,7 @@ async def run_sam_inference(
     point_labels: list[int] | None = None,
     box: list[int] | None = None,
     min_area: int = 0,
-    get_labels: bool = False,
+    for_svg: bool = False,
 ) -> list[dict]:
     """
     Async SAM3 inference using Hugging Face transformers SAM3 model.
@@ -211,6 +223,22 @@ async def run_sam_inference(
                     mask_threshold=0.8,                     # binarize mask
                     target_sizes=hf_inputs.get("original_sizes").tolist()
                 )[0]  # first image only
+
+                if for_svg:
+                    raw_masks = results['masks'].cpu().numpy()
+                    raw_scores = results['scores'].cpu().numpy().tolist()
+
+                    if len(raw_masks) > 0:
+                        masks_array = raw_masks.astype(np.uint8)
+                    else:
+                        masks_array = np.array([])
+
+                    masks_b64 = masks_to_base64(masks_array)
+
+                    return {
+                        'masks': masks_b64,
+                        'scores': raw_scores
+                    }
 
             else:
                 labels = (point_labels or [1] * len(points)) if points else None
@@ -344,10 +372,10 @@ async def segment_endpoint(
 
     return {"segments": segments_out, "num_segments": len(segments_out)}
 
-@app.post("/segment")
-async def segment_endpoint(
+@app.post("/segment_text")
+async def segment_text_endpoint(
     # One of these must be provided
-    image: UploadFile = File(None),
+    image: str = Form(None),
     image_url: Optional[str] = Form(None),
 
     # Prompts
@@ -373,9 +401,8 @@ async def segment_endpoint(
     if image_url:
         pil_img = await load_image_from_url(image_url)
     else:
-        contents = await image.read()
         try:
-            pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
+            pil_img = image_from_base64(image)
         except Exception as e:
             raise HTTPException(400, f"Could not decode uploaded image: {e}")
 
@@ -388,22 +415,10 @@ async def segment_endpoint(
         image=img_np,
         prompt=prompt,
         min_area=min_area,
-        get_labels=True,
+        for_svg=True,
     )
 
-    segments_out = []
-    for idx, seg in enumerate(sam_outputs):
-        mask = seg["mask"]
-        label = seg["label"]
-        mask_b64 = mask_to_base64_png(mask)
-
-        segments_out.append({
-            "id": idx,
-            "mask_base64": mask_b64,
-            "label": label,
-        })
-
-    return {"segments": segments_out, "num_segments": len(segments_out)}
+    return {"masks": sam_outputs["masks"], "num_masks": len(sam_outputs["masks"]), "scores": sam_outputs["scores"]}
 
 
 # -----------------------

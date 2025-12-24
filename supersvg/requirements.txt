@@ -16,7 +16,8 @@ torch-tools
 scikit-fmm
 easydict
 visdom
-opencv-python==4.5.4.60
+opencv-python
 lpips
 cairosvg
 jinja2
+timm

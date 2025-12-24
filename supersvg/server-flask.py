@@ -1,10 +1,17 @@
 """
 Experimental version: SAM3 segmentation + SuperSVG vectorization
-FastAPI version (converted from Flask)
 
-Architecture unchanged:
-- SAM3 service runs on port 5002
-- This app runs on port 5001
+Pipeline:
+1. Use SAM3 service (separate venv) to segment the image into semantic regions
+2. Process each segment through SuperSVG model
+3. Combine all segment SVGs
+4. Run optimization process
+
+Architecture:
+- SAM3 runs as a separate service on port 5002 (Python 3.10+)
+- This app runs on port 5001 (SuperSVG conda env with Python 3.7)
+- Communication via HTTP API
+- Models are loaded on-demand to manage VRAM (not at startup)
 """
 
 import os
@@ -12,21 +19,12 @@ import re
 import uuid
 import gc
 import base64
-import argparse
 import requests
 import torch
 import numpy as np
-
 from io import BytesIO
 from PIL import Image
-from typing import Optional
-from collections import defaultdict
-
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.requests import Request
-
+from flask import Flask, request, render_template, send_file, jsonify
 from torchvision import transforms
 from skimage.segmentation import slic
 import pydiffvg
@@ -34,147 +32,199 @@ import cairosvg
 
 from models.supersvg_coarse import SuperSVG_coarse
 
-# ------------------------------------------------------------------------------
-# App setup
-# ------------------------------------------------------------------------------
+app = Flask(__name__)
 
-app = FastAPI(title="SuperSVG + SAM3 Experimental API")
-templates = Jinja2Templates(directory="templates")
-
-# ------------------------------------------------------------------------------
 # Configuration
-# ------------------------------------------------------------------------------
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'temp')
+OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), 'output')
+CHECKPOINT_PATH = os.path.join(os.path.dirname(__file__), 'ckpts', 'coarse-model.pt')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'bmp'}
 
-BASE_DIR = os.path.dirname(__file__)
-
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "temp")
-OUTPUT_FOLDER = os.path.join(BASE_DIR, "output")
-CHECKPOINT_PATH = os.path.join(BASE_DIR, "ckpts", "coarse-model.pt")
-
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp"}
+# SAM3 service configuration
 SAM3_SERVICE_URL = "http://127.0.0.1:5002"
-
-WIDTH = 224
-BATCH_SIZE = 64
-
-QUALITY_SETTINGS = {
-    "low": 500,
-    "default": 1500,
-    "high": 5000,
-    "best": 10000,
-}
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# Global models - loaded on demand, NOT at startup
 supersvg_model = None
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# ------------------------------------------------------------------------------
-# Utility helpers (UNCHANGED)
-# ------------------------------------------------------------------------------
+# SuperSVG config
+WIDTH = 224
+BATCH_SIZE = 64
 
-def allowed_file(filename: str) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+# Quality settings (SLIC segments per layer)
+QUALITY_SETTINGS = {
+    'low': 500,
+    'default': 1500,
+    'high': 5000,
+    'best': 10000
+}
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def clear_gpu_memory():
+    """Clear GPU memory cache."""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
+    print("GPU memory cleared")
 
 
 def load_supersvg_model():
+    """Load the SuperSVG coarse model on demand."""
     global supersvg_model
     if supersvg_model is None:
-        supersvg_model = SuperSVG_coarse(
-            stroke_num=128, path_num=4, width=WIDTH, num_loss=True
-        )
+        print(f"Loading SuperSVG model from {CHECKPOINT_PATH}...")
+        supersvg_model = SuperSVG_coarse(stroke_num=128, path_num=4, width=WIDTH, num_loss=True)
         state_dict = torch.load(CHECKPOINT_PATH, map_location=device)
-        new_state = {
-            k.replace("module.", "") if k.startswith("module.") else k: v
-            for k, v in state_dict.items()
-        }
-        supersvg_model.load_state_dict(new_state)
-        supersvg_model.to(device).eval()
+        # Handle DDP state dict
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            name = k.replace('module.', '') if k.startswith('module.') else k
+            new_state_dict[name] = v
+        supersvg_model.load_state_dict(new_state_dict)
+        supersvg_model.to(device)
+        supersvg_model.eval()
+        print("SuperSVG model loaded successfully!")
     return supersvg_model
 
 
 def unload_supersvg_model():
+    """Unload SuperSVG model to free VRAM."""
     global supersvg_model
     if supersvg_model is not None:
+        print("Unloading SuperSVG model...")
         del supersvg_model
         supersvg_model = None
         clear_gpu_memory()
+        print("SuperSVG model unloaded")
 
 
 def check_sam3_service():
+    """Check if SAM3 service is available."""
     try:
-        r = requests.get(f"{SAM3_SERVICE_URL}/health", timeout=5)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
+        response = requests.get(f"{SAM3_SERVICE_URL}/health", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            print(f"SAM3 service: {data}")
+            return data
+    except requests.exceptions.ConnectionError:
+        print(f"SAM3 service not available at {SAM3_SERVICE_URL}")
+    except Exception as e:
+        print(f"Error checking SAM3 service: {e}")
     return None
 
 
 def load_sam3_via_service():
-    r = requests.post(f"{SAM3_SERVICE_URL}/load", timeout=300)
-    return r.status_code == 200
+    """Tell SAM3 service to load its model."""
+    try:
+        print("Requesting SAM3 service to load model (this may take a while)...")
+        response = requests.post(f"{SAM3_SERVICE_URL}/load", timeout=300)  # 5 min timeout for model loading
+        if response.status_code == 200:
+            data = response.json()
+            status = data.get('status')
+            print(f"SAM3 load response: {status}")
+            return status == 'loaded'
+        else:
+            print(f"SAM3 load failed with status code: {response.status_code}")
+    except requests.exceptions.Timeout:
+        print("SAM3 model loading timed out (>5 minutes)")
+    except Exception as e:
+        print(f"Error loading SAM3 via service: {e}")
+    return False
 
 
 def unload_sam3_via_service():
+    """Tell SAM3 service to unload its model to free VRAM."""
     try:
-        requests.post(f"{SAM3_SERVICE_URL}/unload", timeout=30)
-        return True
-    except Exception:
-        return False
+        response = requests.post(f"{SAM3_SERVICE_URL}/unload", timeout=30)
+        if response.status_code == 200:
+            print("SAM3 model unloaded via service")
+            return True
+    except Exception as e:
+        print(f"Error unloading SAM3 via service: {e}")
+    return False
 
 
-def image_to_base64(image: Image.Image) -> str:
-    buf = BytesIO()
-    image.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
+def image_to_base64(image_pil):
+    """Convert PIL Image to base64 string."""
+    buffered = BytesIO()
+    image_pil.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
 
-def masks_from_base64(b64: str):
-    buf = BytesIO(base64.b64decode(b64))
-    return np.load(buf)["masks"]
+def masks_from_base64(b64_string):
+    """Convert base64 encoded numpy array back to masks."""
+    buffer = BytesIO(base64.b64decode(b64_string))
+    data = np.load(buffer)
+    return data['masks']
 
 
 def reindex_groups(groups):
-    return [
-        pydiffvg.ShapeGroup(
-            shape_ids=torch.LongTensor([i]), fill_color=g.fill_color
+    """Re-index shape groups to have sequential shape_ids matching their position."""
+    reindexed = []
+    for i, grp in enumerate(groups):
+        reindexed.append(
+            pydiffvg.ShapeGroup(
+                shape_ids=torch.LongTensor([i]),
+                fill_color=grp.fill_color
+            )
         )
-        for i, g in enumerate(groups)
-    ]
+    return reindexed
 
 
 def svg_to_png(svg_path, png_path):
+    """Convert SVG file to PNG using CairoSVG."""
     cairosvg.svg2png(url=svg_path, write_to=png_path)
 
-# ------------------------------------------------------------------------------
-# (ALL image processing, SAM3, SLIC, SVG logic BELOW IS IDENTICAL)
-# ------------------------------------------------------------------------------
-# ⚠️ To keep this response readable, **everything below this line is unchanged**
-# from your original file.
-#
-# That includes:
-# - generate_sam3_masks_via_service
-# - group_masks_by_label
-# - process_slic_segments_batched
-# - process_single_object_mask
-# - process_objects_as_layers
-# - save_svg_with_layers
-# - add_layer_groups_to_svg
-# - mask_black_regions
-# - filter_shapes_in_black_region
-# - process_image_sam3
-#
-# 👉 Paste them EXACTLY as-is from your original file.
-# ------------------------------------------------------------------------------
+
+def optimize_svg_precision(svg_path, decimals=2):
+    """Post-process SVG to reduce decimal precision for smaller file size."""
+    with open(svg_path, 'r') as f:
+        content = f.read()
+
+    original_size = len(content)
+
+    def round_number(match):
+        num_str = match.group(0)
+        try:
+            num = float(num_str)
+            rounded = round(num, decimals)
+            if rounded == int(rounded):
+                return str(int(rounded))
+            else:
+                return f"{rounded:.{decimals}f}".rstrip('0').rstrip('.')
+        except ValueError:
+            return num_str
+
+    def process_d_attr(match):
+        d_content = match.group(1)
+        processed = re.sub(r'-?\d+\.\d+', round_number, d_content)
+        return f'd="{processed}"'
+
+    content = re.sub(r'd="([^"]*)"', process_d_attr, content)
+
+    def process_fill(match):
+        fill_content = match.group(1)
+        processed = re.sub(r'-?\d+\.\d+', round_number, fill_content)
+        return f'fill="{processed}"'
+
+    content = re.sub(r'fill="([^"]*)"', process_fill, content)
+
+    with open(svg_path, 'w') as f:
+        f.write(content)
+
+    new_size = len(content)
+    reduction = ((original_size - new_size) / original_size) * 100
+    print(f"SVG optimized: {original_size:,} -> {new_size:,} bytes ({reduction:.1f}% reduction)")
+
+
 def generate_sam3_masks_via_service(image_pil, use_ollama=True, conf_thresh=0.3, num_rounds=1):
     """
     Generate automatic segmentation masks using SAM3 service.
@@ -901,115 +951,134 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     for layer in layers:
         print(f"  - {layer['label']}: {layer['count']} shapes")
 
-# ==============================================================================
-# FastAPI ROUTES (converted from Flask)
-# ==============================================================================
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+@app.route('/')
+def index():
+    return render_template('index2.html')
 
 
-@app.get("/status")
-async def status():
-    return {
-        "supersvg_loaded": supersvg_model is not None,
-        "sam3_service": check_sam3_service(),
-        "device": device,
-    }
+@app.route('/status', methods=['GET'])
+def status():
+    """Get status of models and services."""
+    sam3_health = check_sam3_service()
+    return jsonify({
+        'supersvg_loaded': supersvg_model is not None,
+        'sam3_service': sam3_health,
+        'device': device
+    })
 
 
-@app.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    use_ollama: bool = Form(True),
-    conf_thresh: float = Form(0.3),
-    num_rounds: int = Form(1),
-    quality: str = Form("default"),
-):
-    if not allowed_file(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type")
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
 
-    if quality not in QUALITY_SETTINGS:
-        quality = "default"
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
 
-    uid = str(uuid.uuid4())[:8]
-    ext = file.filename.rsplit(".", 1)[1].lower()
+    if file and allowed_file(file.filename):
+        # Options from form
+        use_ollama = request.form.get('use_ollama', 'true').lower() == 'true'
+        conf_thresh = float(request.form.get('conf_thresh', '0.3'))
+        num_rounds = int(request.form.get('num_rounds', '1'))
+        quality = request.form.get('quality', 'default')
 
-    input_path = os.path.join(UPLOAD_FOLDER, f"{uid}_input.{ext}")
-    svg_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.svg")
-    png_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.png")
+        # Validate quality setting
+        if quality not in QUALITY_SETTINGS:
+            quality = 'default'
 
-    with open(input_path, "wb") as f:
-        f.write(await file.read())
+        # Generate unique filename
+        unique_id = str(uuid.uuid4())[:8]
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        input_filename = f"{unique_id}_input.{ext}"
+        output_svg_filename = f"{unique_id}_output.svg"
+        output_png_filename = f"{unique_id}_output.png"
 
-    try:
-        process_image_sam3(
-            input_path,
-            svg_path,
-            png_path,
-            use_ollama=use_ollama,
-            conf_thresh=conf_thresh,
-            num_rounds=num_rounds,
-            quality=quality,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        input_path = os.path.join(UPLOAD_FOLDER, input_filename)
+        output_svg_path = os.path.join(OUTPUT_FOLDER, output_svg_filename)
+        output_png_path = os.path.join(OUTPUT_FOLDER, output_png_filename)
 
-    return {
-        "success": True,
-        "svg_url": f"/output/{os.path.basename(svg_path)}",
-        "png_url": f"/output/{os.path.basename(png_path)}",
-    }
+        file.save(input_path)
+
+        try:
+            process_image_sam3(
+                input_path, output_svg_path, output_png_path,
+                use_ollama=use_ollama,
+                conf_thresh=conf_thresh,
+                num_rounds=num_rounds,
+                quality=quality
+            )
+
+            return jsonify({
+                'success': True,
+                'svg_url': f'/output/{output_svg_filename}',
+                'png_url': f'/output/{output_png_filename}',
+                'svg_filename': output_svg_filename,
+                'png_filename': output_png_filename
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    return jsonify({'error': 'Invalid file type'}), 400
 
 
-@app.get("/output/{filename}")
-async def serve_output(filename: str):
-    path = os.path.join(OUTPUT_FOLDER, filename)
-    return FileResponse(path)
+@app.route('/output/<filename>')
+def serve_output(filename):
+    return send_file(os.path.join(OUTPUT_FOLDER, filename))
 
 
-@app.get("/download/{filename}")
-async def download_file(filename: str):
-    path = os.path.join(OUTPUT_FOLDER, filename)
-    return FileResponse(path, filename=filename)
+@app.route('/download/<filename>')
+def download_file(filename):
+    return send_file(
+        os.path.join(OUTPUT_FOLDER, filename),
+        as_attachment=True,
+        download_name=filename
+    )
 
-# ------------------------------------------------------------------------------
-# CLI / Server entrypoint
-# ------------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=str)
-    parser.add_argument("--output-dir", type=str, default=OUTPUT_FOLDER)
-    parser.add_argument("--max-dim", type=int, default=4096)
-    parser.add_argument("--no-ollama", action="store_true")
-    parser.add_argument("--conf-thresh", type=float, default=0.3)
-    parser.add_argument("--num-rounds", type=int, default=1)
-    parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=5001)
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='SuperSVG + SAM3 experimental inference')
+    parser.add_argument('--input', type=str, help='Path to an input image. If provided, runs once and exits.')
+    parser.add_argument('--output-dir', type=str, default=OUTPUT_FOLDER, help='Directory for CLI outputs')
+    parser.add_argument('--max-dim', type=int, default=4096, help='Max dimension for resizing before vectorization')
+    parser.add_argument('--no-ollama', action='store_true', help='Disable Ollama object detection')
+    parser.add_argument('--conf-thresh', type=float, default=0.3, help='SAM3 confidence threshold')
+    parser.add_argument('--num-rounds', type=int, default=1, help='Number of Ollama detection rounds')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Flask host')
+    parser.add_argument('--port', type=int, default=5001, help='Flask port (default 5001)')
+    parser.add_argument('--debug', action='store_true', help='Enable Flask debug mode')
     args = parser.parse_args()
 
     if args.input:
         os.makedirs(args.output_dir, exist_ok=True)
         base = os.path.splitext(os.path.basename(args.input))[0]
-        svg_out = os.path.join(args.output_dir, f"{base}_sam3_output.svg")
-        png_out = os.path.join(args.output_dir, f"{base}_sam3_output.png")
-
+        svg_out = os.path.join(args.output_dir, f'{base}_sam3_output.svg')
+        png_out = os.path.join(args.output_dir, f'{base}_sam3_output.png')
+        print(f'Running SAM3+SuperSVG inference on {args.input}')
         process_image_sam3(
-            args.input,
-            svg_out,
-            png_out,
+            args.input, svg_out, png_out,
             max_dim=args.max_dim,
             use_ollama=not args.no_ollama,
             conf_thresh=args.conf_thresh,
-            num_rounds=args.num_rounds,
+            num_rounds=args.num_rounds
         )
+        print(f'Output: {svg_out}, {png_out}')
     else:
-        import uvicorn
-
-        print("Starting FastAPI server (models load on-demand)")
-        print(f"SAM3 service: {SAM3_SERVICE_URL}")
+        # DO NOT pre-load models - they will be loaded on demand
+        print("Starting app2.py server (models will be loaded on-demand)...")
+        print(f"SAM3 service expected at: {SAM3_SERVICE_URL}")
         print(f"Device: {device}")
 
-        uvicorn.run(app, host=args.host, port=args.port)
+        # Just check if SAM3 service is reachable (don't load its model)
+        health = check_sam3_service()
+        if health:
+            print(f"SAM3 service is reachable: {health}")
+        else:
+            print("WARNING: SAM3 service not reachable at port 5002")
+
+        app.run(host=args.host, port=args.port, debug=args.debug)

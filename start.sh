@@ -79,6 +79,11 @@ setup_bezier() {
     cp -r /app/bezier /workspace/apps/
     cd bezier
     pip install --upgrade --no-cache-dir -r requirements.txt
+    if [ ! -d "/workspace/apps/bezier/gsplat" ]; then
+        git clone https://github.com/XingtongGe/gsplat.git
+    fi
+    cd gsplat
+    pip install -e .
 }
 
 start_sam3() {

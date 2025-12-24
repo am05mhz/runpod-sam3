@@ -1,4 +1,3 @@
-gsplat
 torch
 torchvision
 scipy
@@ -11,3 +10,7 @@ uvicorn
 python-multipart
 jinja2
 argparse
+werkzeug
+opencv-python
+matplotlib
+scikit-image
