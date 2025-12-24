@@ -90,7 +90,25 @@ start_sam3() {
     echo "starting sam3..."
     source /app/venv/apps/bin/activate
     cd /workspace/apps/sam3
-    python server.py --port=$SAM3_PORT
+    nohup python server.py --port=$SAM3_PORT > /proc/self/fd/1 2>&1 &
+}
+
+start_supersvg() {
+    if [[ $START_SUPERSVG ]]; then
+        echo "starting supersvg..."
+        source /app/venv/apps/bin/activate
+        cd /workspace/apps/supersvg
+        nohup python server.py --port=$SUPERSVG_PORT > /proc/self/fd/1 2>&1 &
+    fi
+}
+
+start_bezier() {
+    if [[ $START_BEZIER ]]; then
+        echo "starting bezier splatting..."
+        source /app/venv/bezier/bin/activate
+        cd /workspace/apps/bezier
+        nohup python server.py --port=$BEZIER_PORT > /proc/self/fd/1 2>&1 &
+    fi
 }
 
 setup_vllm() {
@@ -114,15 +132,6 @@ export_env_vars() {
     echo 'source /etc/rp_environment' >> ~/.bashrc
 }
 
-# # Start jupyter lab
-# start_jupyter() {
-#     echo "Starting Jupyter Lab..."
-#     mkdir -p "$WORKSPACE_DIR" && \
-#     cd / && \
-#     nohup jupyter lab --allow-root --no-browser --port=8888 --ip=* --NotebookApp.token='' --NotebookApp.password='' --FileContentsManager.delete_to_trash=False --ServerApp.terminado_settings='{"shell_command":["/bin/bash"]}' --ServerApp.allow_origin=* --ServerApp.preferred_dir="$WORKSPACE_DIR" &> /jupyter.log &
-#     echo "Jupyter Lab started without a password"
-# }
-
 # Call Python handler if mode is serverless or both
 call_python_handler() {
     echo "Calling Python handler.py..."
@@ -139,8 +148,8 @@ echo "Pod Started"
 
 setup_ssh
 setup_sam3
-setup_bezier
 setup_supersvg
+setup_bezier
 
 case $MODE_TO_RUN in
     serverless)
@@ -150,6 +159,8 @@ case $MODE_TO_RUN in
     pod)
         echo "Running in pod mode"
         start_sam3
+        start_supersvg
+        start_bezier
         ;;
     *)
         echo "Invalid MODE_TO_RUN value: $MODE_TO_RUN. Expected 'serverless', 'pod', or 'both'."
@@ -158,9 +169,6 @@ case $MODE_TO_RUN in
 esac
 
 export_env_vars
-
-# setup_vllm
-# start_sam3
 
 echo "Start script(s) finished"
 
