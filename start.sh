@@ -72,7 +72,7 @@ setup_bezier() {
         git clone https://github.com/XingtongGe/gsplat.git
     fi
     cd gsplat
-    pip install .[dev]
+    pip install --upgrade --no-cache-dir -e .
     cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
