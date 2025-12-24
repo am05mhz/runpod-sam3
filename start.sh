@@ -37,15 +37,9 @@ setup_ssh() {
 
 setup_sam3() {
     echo "installing sam3..."
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
-    fi
-    cd /workspace/apps
     if [ ! -d "/workspace/apps/sam3" ]; then
-        git clone https://github.com/facebookresearch/sam3.git
+        mkdir -p /workspace/apps/sam3
     fi
-    cd sam3
-    pip install --upgrade --no-cache-dir -e .
     cp -r /app/sam3/server.py /workspace/apps/sam3/
 }
 
@@ -58,8 +52,9 @@ setup_supersvg() {
     if [ ! -d "/workspace/apps/supersvg" ]; then
         git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     fi
-    cd supersvg
-    pip install --upgrade --no-cache-dir -e .
+    cd supersvg/DiffVG
+    git submodule update --init --recursive
+    python setup.py install
     cp -r /app/supersvg/* /workspace/apps/supersvg/
 }
 
@@ -73,7 +68,9 @@ setup_bezier() {
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     fi
     cd bezier
-    pip install --upgrade --no-cache-dir -e .
+    git clone https://github.com/XingtongGe/gsplat/tree/bcca3ecae966a052e3bf8dd1ff9910cf7b8f851d
+    cd gsplat
+    pip install .[dev]
     cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
