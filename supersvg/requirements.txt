@@ -4,7 +4,7 @@ numpy
 scikit-image
 anaconda
 cmake
-conda-forge
+#conda-forge
 ffmpeg
 svgwrite
 svgpathtools
