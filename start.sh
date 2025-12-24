@@ -54,7 +54,9 @@ setup_supersvg() {
     fi
     cd supersvg/DiffVG
     git submodule update --init --recursive
-    python setup.py install
+    if [[ $DO_INSTALL ]]; then
+        python setup.py install
+    fi
     cp -r /app/supersvg/* /workspace/apps/supersvg/
 }
 
@@ -72,7 +74,9 @@ setup_bezier() {
         git clone https://github.com/XingtongGe/gsplat.git
     fi
     cd gsplat
-    pip install --upgrade --no-cache-dir -e .
+    if [[ $DO_INSTALL ]]; then
+       pip install --upgrade --no-cache-dir -e .
+    fi
     cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
