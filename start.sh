@@ -37,14 +37,16 @@ setup_ssh() {
 
 setup_sam3() {
     echo "installing sam3..."
-    if [ ! -d "/workspace/apps/sam3" ]; then
-        mkdir -p /workspace/apps/sam3
+    source /app/venv/apps/bin/activate
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
     fi
-    cp -r /app/sam3/server.py /workspace/apps/sam3/
+    cp -r /app/sam3 /workspace/apps/
 }
 
 setup_supersvg() {
     echo "installing supersvg..."
+    source /app/venv/apps/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
     fi
@@ -52,16 +54,19 @@ setup_supersvg() {
     if [ ! -d "/workspace/apps/supersvg" ]; then
         git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     fi
-    cd supersvg/DiffVG
+    cd supersvg
+    pip install --upgrade --no-cache-dir -r requirements.txt
+    cp -r /app/supersvg /workspace/apps/
+    cd DiffVG
     git submodule update --init --recursive
     if [[ $DO_INSTALL ]]; then
         python setup.py install
     fi
-    cp -r /app/supersvg/* /workspace/apps/supersvg/
 }
 
 setup_bezier() {
     echo "installing bezier splatting..."
+    source /app/venv/bezier/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
     fi
@@ -70,20 +75,14 @@ setup_bezier() {
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     fi
     cd bezier
-    if [ ! -d "/workspace/apps/bezier/gsplat" ]; then
-        git clone https://github.com/XingtongGe/gsplat.git
-    fi
-    cd gsplat
-    if [[ $DO_INSTALL ]]; then
-       pip install --upgrade --no-cache-dir -e .
-    fi
+    pip install --upgrade --no-cache-dir -r requirements.txt
     cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
 start_sam3() {
     echo "starting sam3..."
+    source /app/venv/apps/bin/activate
     cd /workspace/apps/sam3
-    source /app/venv/bin/activate
     python server.py --port=$SAM3_PORT
 }
 

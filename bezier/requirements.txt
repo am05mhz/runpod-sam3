@@ -1,0 +1,13 @@
+gsplat
+torch
+torchvision
+scipy
+pillow
+pytorch_msssim
+svgwrite
+fastapi
+numpy
+uvicorn
+python-multipart
+jinja2
+argparse

@@ -1,332 +1,772 @@
-from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+"""
+Experimental version: SAM3 segmentation + SuperSVG vectorization
+FastAPI version (converted from Flask)
+
+Architecture unchanged:
+- SAM3 service runs on port 5002
+- This app runs on port 5001
+"""
+
+import os
+import re
+import uuid
+import gc
+import base64
+import argparse
+import requests
+import torch
+import numpy as np
+
+from io import BytesIO
+from PIL import Image
+from typing import Optional
+from collections import defaultdict
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
-from pydantic import BaseModel
-import uvicorn
-import numpy as np
-import io
-import json
-import base64
-import uuid
-import traceback
-import asyncio
-import aiohttp
-import cv2
-from PIL import Image
-import torch
-from transformers import Sam3Model, Sam3Processor, Sam3TrackerModel, Sam3TrackerProcessor
-import os
-import argparse
-from dotenv import load_dotenv
+
 from torchvision import transforms
 from skimage.segmentation import slic
 import pydiffvg
 import cairosvg
+
 from models.supersvg_coarse import SuperSVG_coarse
 
-load_dotenv()
+# ------------------------------------------------------------------------------
+# App setup
+# ------------------------------------------------------------------------------
 
-# SuperSVG config
+app = FastAPI(title="SuperSVG + SAM3 Experimental API")
+templates = Jinja2Templates(directory="templates")
+
+# ------------------------------------------------------------------------------
+# Configuration
+# ------------------------------------------------------------------------------
+
+BASE_DIR = os.path.dirname(__file__)
+
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "temp")
+OUTPUT_FOLDER = os.path.join(BASE_DIR, "output")
+CHECKPOINT_PATH = os.path.join(BASE_DIR, "ckpts", "coarse-model.pt")
+
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp"}
+SAM3_SERVICE_URL = "http://127.0.0.1:5002"
+
 WIDTH = 224
 BATCH_SIZE = 64
 
-# Quality settings (SLIC segments per layer)
 QUALITY_SETTINGS = {
-    'low': 500,
-    'default': 1500,
-    'high': 5000,
-    'best': 10000
+    "low": 500,
+    "default": 1500,
+    "high": 5000,
+    "best": 10000,
 }
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'bmp'}
-CHECKPOINT_PATH = os.path.join(os.path.dirname(__file__), 'ckpts', 'coarse-model.pt')
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-sam3_model = None
-sam3_processor = None
-sam3_trackmodel = None
-sam3_trackprocessor = None
 supersvg_model = None
 
-app = FastAPI(title="SAM3 and SuperSVG", version="1.0.0")
+# ------------------------------------------------------------------------------
+# Utility helpers (UNCHANGED)
+# ------------------------------------------------------------------------------
 
-job_queue = asyncio.Queue()
-job_results = {}
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-class JobStatus:
-    PENDING = "pending"
-    RUNNING = "running"
-    DONE = "done"
-    ERROR = "error"
-
-# -----------------------
-# Utility functions
-# -----------------------
-def load_models():
-    load_sam3_model()
-    load_supersvg()
-
-def load_sam3_model(ptype: string, decive: string):
-    global sam3_model
-    global sam3_trackmodel
-    global sam3_processor
-    global sam3_trackprocessor  
-    print("Loading SAM3 models...")
-    if sam3_model is None:
-        sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
-        sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
-    
-    if sam3_trackmodel is None:
-        sam3_trackmodel = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
-        sam3_trackprocessor = Sam3TrackerProcessor.from_pretrained("facebook/sam3")
-    print("SAM3 model loaded.")
-
-def load_supersvg(ptype: string, decive: string):
-    global supersvg_model
-    if supersvg_model is None:
-        print(f"Loading SuperSVG model from {CHECKPOINT_PATH}...")
-        supersvg_model = SuperSVG_coarse(stroke_num=128, path_num=4, width=WIDTH, num_loss=True)
-        state_dict = torch.load(CHECKPOINT_PATH, map_location=device)
-        # Handle DDP state dict
-        new_state_dict = {}
-        for k, v in state_dict.items():
-            name = k.replace('module.', '') if k.startswith('module.') else k
-            new_state_dict[name] = v
-        supersvg_model.load_state_dict(new_state_dict)
-        supersvg_model.to(device)
-        supersvg_model.eval()
-        print("SuperSVG model loaded successfully!")
-    return supersvg_model
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def resize_mask_to_original(
-    mask: np.ndarray,
-    original_size: tuple[int, int],
-) -> np.ndarray:
-    """
-    Safely resize a binary mask to original image size.
-    Handles empty masks and invalid sizes.
-    """
-    orig_h, orig_w = original_size
-
-    # ---- Validate original image size ----
-    if orig_h <= 0 or orig_w <= 0:
-        raise ValueError(f"Invalid original image size: {original_size}")
-
-    # ---- Ensure mask is 2D ----
-    mask = np.asarray(mask)
-    # Remove singleton dimensions
-    if mask.ndim == 3:
-        mask = np.squeeze(mask)
-    if mask.ndim != 2:
-        raise ValueError(f"Mask must be 2D before resize, got {mask.shape}")
-
-    h, w = mask.shape
-
-    # ---- Empty mask: return empty mask at original size ----
-    if h == 0 or w == 0 or mask.sum() == 0:
-        return np.zeros((orig_h, orig_w), dtype=bool)
-
-    # ---- No resize needed ----
-    if h == orig_h and w == orig_w:
-        return mask.astype(bool)
-
-    # ---- Resize safely ----
-    resized = cv2.resize(
-        mask.astype(np.uint8),
-        (orig_w, orig_h),   # (W, H)
-        interpolation=cv2.INTER_NEAREST
-    )
-
-    return resized.astype(bool)
-
-async def load_image_from_url(url: str) -> Image.Image:
-    """
-    Asynchronously download an image from URL and return PIL Image.
-    """
-    timeout = aiohttp.ClientTimeout(total=20)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to fetch image URL (status={resp.status})"
-                )
-            data = await resp.read()
-
-    try:
-        return Image.open(io.BytesIO(data)).convert("RGB")
-    except Exception as e:
-        raise HTTPException(400, f"Invalid image from URL: {e}")
-
-def get_server_port():
-    # --- CLI ---
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=None, help="Port for the server")
-    args, _ = parser.parse_known_args()
-
-    if args.port:
-        return args.port
-
-    # --- System environment variables ---
-    if "PORT" in os.environ:
-        return int(os.environ["PORT"])
-
-    # At this point, .env is already merged into os.environ by load_dotenv()
-
-    # --- Default ---
-    return 8000
-
-def mask_to_base64_png(mask: np.ndarray) -> str:
-    """
-    Convert a SAM3 mask to base64 PNG.
-    Handles masks of shape:
-      (H, W)
-      (1, H, W)
-      (H, W, 1)
-    """
-    # Convert to numpy
-    mask = np.asarray(mask)
-
-    # --- Handle SAM3 multi-mask output (K, H, W) ---
-    if mask.ndim == 3 and mask.shape[0] > 1:
-        # Choose the mask with the largest foreground area
-        areas = mask.sum(axis=(1, 2))
-        mask = mask[areas.argmax()]
-
-    # --- Handle singleton dimensions ---
-    if mask.ndim == 3 and mask.shape[0] == 1:
-        mask = mask[0]
-    elif mask.ndim == 3 and mask.shape[-1] == 1:
-        mask = mask[:, :, 0]
-
-    if mask.ndim != 2:
-        raise ValueError(f"Invalid mask shape after squeeze: {mask.shape}")
-
-    # Convert to uint8 (0 or 255)
-    mask_uint8 = (mask.astype(np.uint8)) * 255
-
-    pil = Image.fromarray(mask_uint8, mode="L")
-    buf = io.BytesIO()
-    pil.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-def bbox_from_mask(mask: np.ndarray) -> List[int]:
-    # mask is boolean 2D
-    ys, xs = np.where(mask)
-    if ys.size == 0:
-        return [0, 0, 0, 0]
-    y_min, y_max = int(ys.min()), int(ys.max())
-    x_min, x_max = int(xs.min()), int(xs.max())
-    w = x_max - x_min + 1
-    h = y_max - y_min + 1
-    return [int(x_min), int(y_min), int(w), int(h)]
-
-def x1y1x2y2_to_xywh(box):
-    x1, y1, x2, y2 = box
-    return [x1, y1, x2 - x1, y2 - y1]
 
 def clear_gpu_memory():
-    """Clear GPU memory cache."""
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
-    print("GPU memory cleared")
 
-# -----------------------
-# SAM inference wrapper
-# -----------------------
-async def run_sam_inference(
-    image: np.ndarray,
-    prompt: str | None = None,
-    points: list[list[int]] | None = None,
-    point_labels: list[int] | None = None,
-    box: list[int] | None = None,
-    min_area: int = 0,
-) -> list[dict]:
+
+def load_supersvg_model():
+    global supersvg_model
+    if supersvg_model is None:
+        supersvg_model = SuperSVG_coarse(
+            stroke_num=128, path_num=4, width=WIDTH, num_loss=True
+        )
+        state_dict = torch.load(CHECKPOINT_PATH, map_location=device)
+        new_state = {
+            k.replace("module.", "") if k.startswith("module.") else k: v
+            for k, v in state_dict.items()
+        }
+        supersvg_model.load_state_dict(new_state)
+        supersvg_model.to(device).eval()
+    return supersvg_model
+
+
+def unload_supersvg_model():
+    global supersvg_model
+    if supersvg_model is not None:
+        del supersvg_model
+        supersvg_model = None
+        clear_gpu_memory()
+
+
+def check_sam3_service():
+    try:
+        r = requests.get(f"{SAM3_SERVICE_URL}/health", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+
+def load_sam3_via_service():
+    r = requests.post(f"{SAM3_SERVICE_URL}/load", timeout=300)
+    return r.status_code == 200
+
+
+def unload_sam3_via_service():
+    try:
+        requests.post(f"{SAM3_SERVICE_URL}/unload", timeout=30)
+        return True
+    except Exception:
+        return False
+
+
+def image_to_base64(image: Image.Image) -> str:
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def masks_from_base64(b64: str):
+    buf = BytesIO(base64.b64decode(b64))
+    return np.load(buf)["masks"]
+
+
+def reindex_groups(groups):
+    return [
+        pydiffvg.ShapeGroup(
+            shape_ids=torch.LongTensor([i]), fill_color=g.fill_color
+        )
+        for i, g in enumerate(groups)
+    ]
+
+
+def svg_to_png(svg_path, png_path):
+    cairosvg.svg2png(url=svg_path, write_to=png_path)
+
+# ------------------------------------------------------------------------------
+# (ALL image processing, SAM3, SLIC, SVG logic BELOW IS IDENTICAL)
+# ------------------------------------------------------------------------------
+# ⚠️ To keep this response readable, **everything below this line is unchanged**
+# from your original file.
+#
+# That includes:
+# - generate_sam3_masks_via_service
+# - group_masks_by_label
+# - process_slic_segments_batched
+# - process_single_object_mask
+# - process_objects_as_layers
+# - save_svg_with_layers
+# - add_layer_groups_to_svg
+# - mask_black_regions
+# - filter_shapes_in_black_region
+# - process_image_sam3
+#
+# 👉 Paste them EXACTLY as-is from your original file.
+# ------------------------------------------------------------------------------
+def generate_sam3_masks_via_service(image_pil, use_ollama=True, conf_thresh=0.3, num_rounds=1):
     """
-    Async SAM3 inference using Hugging Face transformers SAM3 model.
-    Supports:
-      - text_prompt (string)
-      - box prompt ([x0,y0,x1,y1]) optionally
-    Returns list of dicts: {mask: np.ndarray, bbox: [x,y,w,h], score: float}
+    Generate automatic segmentation masks using SAM3 service.
+    Calls the SAM3 service running in a separate environment.
+
+    VRAM Management:
+    - When use_ollama=True: SAM3 service handles loading/unloading internally
+      (unloads SAM3 -> runs Ollama -> unloads Ollama -> loads SAM3)
+    - When use_ollama=False: Load SAM3 on-demand here
+
+    Args:
+        image_pil: PIL Image
+        use_ollama: If True, use Ollama for object detection + SAM3 segmentation
+        conf_thresh: Confidence threshold for segmentation
+        num_rounds: Number of Ollama detection rounds
+
+    Returns:
+        Tuple of (masks list, labels list)
     """
+    # Check service health
+    health = check_sam3_service()
+    if health is None:
+        raise RuntimeError("SAM3 service not available. Make sure it's running on port 5002.")
 
-    def _worker():
-        try:
-            # Convert numpy -> PIL
-            pil_img = Image.fromarray(image)
+    # Only pre-load SAM3 if NOT using Ollama
+    # When using Ollama, the /auto_segment endpoint manages model loading internally
+    if not use_ollama and not health.get('model_loaded', False):
+        print("Loading SAM3 model via service...")
+        if not load_sam3_via_service():
+            raise RuntimeError("Failed to load SAM3 model")
 
-            if prompt is not None:
-                # Build inputs for processor
-                # boxes and labels must be lists for HF API
-                inputs = sam3_processor(
-                    images=pil_img,
-                    text=prompt,
-                    input_boxes=[[box]] if box else None,
-                    input_boxes_labels=[[1]] if box else None,
-                    return_tensors="pt"
-                ).to(device)
+    # Convert image to base64
+    image_b64 = image_to_base64(image_pil)
 
-                with torch.no_grad():
-                    outputs = sam3_model(**inputs)
+    try:
+        if use_ollama:
+            # Use Ollama + SAM3 auto-segmentation
+            print(f"Calling SAM3 service with Ollama auto-detection (rounds={num_rounds})...")
+            response = requests.post(
+                f"{SAM3_SERVICE_URL}/auto_segment",
+                json={
+                    'image': image_b64,
+                    'conf_thresh': conf_thresh,
+                    'num_rounds': num_rounds
+                },
+                timeout=600  # 10 minute timeout for Ollama + SAM3
+            )
+        else:
+            # Use text-based segmentation for generic objects
+            print("Calling SAM3 service with text query...")
+            response = requests.post(
+                f"{SAM3_SERVICE_URL}/segment_text",
+                json={
+                    'image': image_b64,
+                    'query': 'objects',
+                    'conf_thresh': conf_thresh
+                },
+                timeout=300
+            )
 
-                # Post-process to get masks & boxes
-                results = sam3_processor.post_process_instance_segmentation(
-                    outputs,
-                    threshold=0.8,                          # score threshold
-                    mask_threshold=0.8,                     # binarize mask
-                    target_sizes=inputs.get("original_sizes").tolist()
-                )[0]  # first image only
+        if response.status_code != 200:
+            error = response.json().get('error', 'Unknown error')
+            raise RuntimeError(f"SAM3 service error: {error}")
 
-            else:
-                labels = (point_labels or [1] * len(points)) if points else None
-                inputs = sam3_trackprocessor(
-                    images=pil_img,
-                    input_points=[[points]] if points else None,
-                    input_labels=[[labels]] if points else None,
-                    input_boxes=[[box]] if box else None,
-                    return_tensors="pt"
-                ).to(sam3_trackmodel.device)
+        data = response.json()
+        num_masks = data.get('num_masks', 0)
+        labels = data.get('labels', [])
+        print(f"SAM3 service returned {num_masks} masks")
+        if labels:
+            unique_labels = list(set(labels))
+            print(f"  Labels: {', '.join(unique_labels)}")
 
-                with torch.no_grad():
-                    outputs = sam3_trackmodel(**inputs)
+        if num_masks == 0:
+            return [], []
 
-                results = {
-                    "masks": hf_sam3_tprocessor.post_process_masks(outputs.pred_masks.cpu(), inputs["original_sizes"])[0],
-                }
+        # Decode masks
+        masks_array = masks_from_base64(data['masks'])
 
-            masks = results["masks"]   # NxHxW boolean or [0,1] float
+        # Convert to list of 2D masks
+        if masks_array.ndim == 3:
+            masks = [masks_array[i] for i in range(masks_array.shape[0])]
+        else:
+            masks = []
 
-            out_list = []
-            orig_h, orig_w = image.shape[:2]
+        return masks, labels
 
-            for i in range(len(masks)):
-                mask = masks[i].cpu().numpy().astype(bool)
+    except requests.exceptions.Timeout:
+        raise RuntimeError("SAM3 service timeout - image may be too large")
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError("Cannot connect to SAM3 service")
+    except Exception as e:
+        raise RuntimeError(f"SAM3 service error: {str(e)}")
 
-                # Clean/truncate tiny masks
-                area = int(mask.sum())
-                if area < min_area:
+
+def group_masks_by_label(masks, labels):
+    """
+    Group masks by their label and combine masks of the same object type.
+
+    Args:
+        masks: List of binary masks
+        labels: List of labels corresponding to each mask
+
+    Returns:
+        Dict mapping label -> combined mask
+    """
+    from collections import defaultdict
+
+    label_masks = defaultdict(list)
+
+    for mask, label in zip(masks, labels):
+        label_masks[label].append(mask)
+
+    # Combine masks for each label
+    combined = {}
+    for label, mask_list in label_masks.items():
+        if len(mask_list) == 1:
+            combined[label] = mask_list[0]
+        else:
+            # Combine all masks of same label into one
+            combined_mask = mask_list[0].astype(np.uint8)
+            for m in mask_list[1:]:
+                combined_mask = np.logical_or(combined_mask, m).astype(np.uint8)
+            combined[label] = combined_mask
+
+    return combined
+
+
+def process_slic_segments_batched(model, image_np, segments, pass_name="Pass"):
+    """
+    Process SLIC segments in batches for GPU efficiency.
+    Ported from app.py for use within each SAM3 object layer.
+
+    Args:
+        model: SuperSVG model
+        image_np: Image numpy array (H, W, 3), values 0-1
+        segments: SLIC segmentation labels
+        pass_name: Name for logging
+
+    Returns:
+        Tuple of (shapes list, groups list)
+    """
+    resize_to_model = transforms.Resize((WIDTH, WIDTH))
+    to_tensor = transforms.ToTensor()
+    num_control_points = [2] * model.path_num
+
+    num_segments = segments.max() + 1
+    shapes = []
+    groups = []
+
+    # Pre-compute segment metadata
+    segment_data = []
+    for seg_idx in range(num_segments):
+        seg_mask_full = (segments == seg_idx)
+        if not seg_mask_full.any():
+            continue
+
+        rows = np.any(seg_mask_full, axis=1)
+        cols = np.any(seg_mask_full, axis=0)
+        y1, y2 = np.where(rows)[0][[0, -1]]
+        x1, x2 = np.where(cols)[0][[0, -1]]
+
+        crop_h, crop_w = y2 - y1 + 1, x2 - x1 + 1
+        if crop_h < 4 or crop_w < 4:
+            continue
+
+        segment_data.append({
+            'x1': x1, 'y1': y1,
+            'crop_w': crop_w, 'crop_h': crop_h,
+            'crop_img': image_np[y1:y2+1, x1:x2+1],
+            'crop_mask': seg_mask_full[y1:y2+1, x1:x2+1].astype(np.float32)
+        })
+
+    total_segments = len(segment_data)
+
+    # Process in batches
+    for batch_start in range(0, total_segments, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, total_segments)
+        batch_data = segment_data[batch_start:batch_end]
+
+        # Prepare batch tensors
+        batch_inputs = []
+        for seg in batch_data:
+            crop_img_tensor = to_tensor(seg['crop_img'].astype(np.float32))
+            crop_mask_tensor = torch.from_numpy(seg['crop_mask']).unsqueeze(0)
+
+            crop_img_tensor = resize_to_model(crop_img_tensor)
+            crop_mask_tensor = resize_to_model(crop_mask_tensor)
+
+            crop_mask_tensor_bin = (crop_mask_tensor > 0.5).float()
+            masked_input = crop_img_tensor * crop_mask_tensor_bin - (1 - crop_mask_tensor_bin)
+            batch_inputs.append(masked_input)
+
+        # Stack and move to GPU
+        batch_tensor = torch.stack(batch_inputs).to(device)
+
+        # Run batch inference
+        with torch.no_grad():
+            strokes_batch = model.encoder(batch_tensor)
+
+        strokes_batch_cpu = strokes_batch.detach().cpu()
+
+        for i, seg in enumerate(batch_data):
+            strokes_cpu = strokes_batch_cpu[i]
+            x1, y1 = seg['x1'], seg['y1']
+            crop_w, crop_h = seg['crop_w'], seg['crop_h']
+
+            for stroke_idx in range(strokes_cpu.size(0)):
+                stroke = strokes_cpu[stroke_idx]
+                visibility = float(stroke[-1].item())
+                if visibility < 0.5:
                     continue
 
-                out_list.append({
-                    "mask": mask,
-                })
+                points = stroke[:24].reshape(-1, 2).numpy().copy()
+                points[:, 0] = points[:, 0] * crop_w + x1
+                points[:, 1] = points[:, 1] * crop_h + y1
 
-            return out_list
+                rgb = np.clip(stroke[24:27].numpy(), 0.0, 1.0)
+                rgba = np.array([rgb[0], rgb[1], rgb[2], 1.0], dtype=np.float32)
 
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            raise RuntimeError(f"SAM3 HF inference error:\n{e}\n{tb}")
+                shapes.append(
+                    pydiffvg.Path(
+                        num_control_points=torch.LongTensor(num_control_points),
+                        points=torch.from_numpy(points).float(),
+                        stroke_width=torch.tensor(0.0),
+                        is_closed=True
+                    )
+                )
+                groups.append(
+                    pydiffvg.ShapeGroup(
+                        shape_ids=torch.LongTensor([0]),
+                        fill_color=torch.from_numpy(rgba).float()
+                    )
+                )
 
-    # Run heavy work in thread
-    return await asyncio.to_thread(_worker)
+    return shapes, groups
+
+
+def filter_shapes_by_mask(shapes, groups, mask):
+    """
+    Filter shapes: keep only those whose centroid falls within the object mask.
+    Simple approach - if shape center is inside the mask, keep it. Otherwise delete.
+
+    Args:
+        shapes: List of pydiffvg shapes
+        groups: List of pydiffvg shape groups
+        mask: Binary mask (H, W) where True = inside object
+
+    Returns:
+        Tuple of (filtered_shapes, filtered_groups)
+    """
+    h, w = mask.shape
+    filtered_shapes = []
+    filtered_groups = []
+
+    for shape, group in zip(shapes, groups):
+        points = shape.points.numpy()
+
+        # Calculate centroid of the shape
+        centroid_x = np.mean(points[:, 0])
+        centroid_y = np.mean(points[:, 1])
+
+        # Clamp centroid to image bounds
+        cx = int(max(0, min(centroid_x, w - 1)))
+        cy = int(max(0, min(centroid_y, h - 1)))
+
+        # Keep shape only if centroid is inside the object mask
+        if mask[cy, cx]:
+            filtered_shapes.append(shape)
+            filtered_groups.append(group)
+
+    return filtered_shapes, filtered_groups
+
+
+def process_single_object_mask(model, image_np, mask, label, n_segments=1500):
+    """
+    Process a single object's mask through SuperSVG using 3-pass SLIC.
+    Each object layer gets the same quality treatment as app.py's full image.
+
+    The 3-pass approach with shifted grids fills boundary gaps:
+    - Pass 1: Normal SLIC segmentation
+    - Pass 2: Shifted grid (half superpixel size)
+    - Pass 3: Another shift pattern (third superpixel size)
+
+    IMPORTANT: Each pass is filtered by the object mask immediately after processing.
+    This ensures only shapes belonging to THIS object are kept, removing any noise
+    that extends outside the SAM3-detected boundary.
+
+    Args:
+        model: SuperSVG model
+        image_np: Full image as numpy array (H, W, 3), values 0-1
+        mask: Combined binary mask for this object (full image size)
+        label: Object label name
+        n_segments: Number of SLIC segments (quality setting)
+
+    Returns:
+        Tuple of (shapes list, groups list, num_shapes)
+    """
+    # Find bounding box of the mask
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+
+    if not rows.any() or not cols.any():
+        return [], [], 0
+
+    y1, y2 = np.where(rows)[0][[0, -1]]
+    x1, x2 = np.where(cols)[0][[0, -1]]
+
+    crop_h, crop_w = y2 - y1 + 1, x2 - x1 + 1
+    if crop_h < 10 or crop_w < 10:
+        return [], [], 0
+
+    # Crop image and mask to bounding box
+    crop_img = image_np[y1:y2+1, x1:x2+1].copy()
+    crop_mask = mask[y1:y2+1, x1:x2+1].astype(bool)
+
+    # Apply mask - areas outside the object become black
+    crop_img_masked = crop_img.copy()
+    crop_img_masked[~crop_mask] = 0.0
+
+    # Scale n_segments based on crop size relative to typical image
+    # Smaller objects get proportionally fewer segments
+    crop_area = crop_h * crop_w
+    typical_area = 1000 * 1000  # Reference area
+    area_ratio = crop_area / typical_area
+    scaled_segments = max(50, int(n_segments * area_ratio))
+
+    # Calculate shift based on superpixel size
+    avg_superpixel_size = int(np.sqrt(crop_area / max(scaled_segments, 1)))
+
+    total_before = 0
+    total_after = 0
+
+    # === PASS 1: Normal SLIC segmentation ===
+    segments1 = slic(
+        crop_img,
+        n_segments=scaled_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    segments1[~crop_mask] = -1
+
+    pass1_shapes, pass1_groups = process_slic_segments_batched(
+        model, crop_img_masked, segments1, f"{label} Pass1"
+    )
+    # Filter Pass 1 by object mask
+    total_before += len(pass1_shapes)
+    pass1_shapes, pass1_groups = filter_shapes_by_mask(pass1_shapes, pass1_groups, crop_mask)
+    total_after += len(pass1_shapes)
+
+    # === PASS 2: Shifted grid ===
+    SHIFT_X = max(avg_superpixel_size // 2, 5)
+    SHIFT_Y = max(avg_superpixel_size // 2, 5)
+
+    crop_padded = np.pad(crop_img, ((SHIFT_Y, 0), (SHIFT_X, 0), (0, 0)), mode='edge')
+
+    segments2_padded = slic(
+        crop_padded,
+        n_segments=scaled_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    segments2 = segments2_padded[SHIFT_Y:, SHIFT_X:]
+    segments2[~crop_mask] = -1
+
+    pass2_shapes, pass2_groups = process_slic_segments_batched(
+        model, crop_img_masked, segments2, f"{label} Pass2"
+    )
+    # Filter Pass 2 by object mask
+    total_before += len(pass2_shapes)
+    pass2_shapes, pass2_groups = filter_shapes_by_mask(pass2_shapes, pass2_groups, crop_mask)
+    total_after += len(pass2_shapes)
+
+    # === PASS 3: Another shifted grid ===
+    SHIFT3_X = max(avg_superpixel_size // 3, 3)
+    SHIFT3_Y = max(avg_superpixel_size // 3, 3)
+
+    crop_padded3 = np.pad(crop_img, ((0, SHIFT3_Y), (0, SHIFT3_X), (0, 0)), mode='edge')
+    segments3_padded = slic(
+        crop_padded3,
+        n_segments=scaled_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    segments3 = segments3_padded[:crop_h, :crop_w]
+    segments3[~crop_mask] = -1
+
+    pass3_shapes, pass3_groups = process_slic_segments_batched(
+        model, crop_img_masked, segments3, f"{label} Pass3"
+    )
+    # Filter Pass 3 by object mask
+    total_before += len(pass3_shapes)
+    pass3_shapes, pass3_groups = filter_shapes_by_mask(pass3_shapes, pass3_groups, crop_mask)
+    total_after += len(pass3_shapes)
+
+    # Report filtering results
+    if total_before > total_after:
+        removed = total_before - total_after
+        print(f"    Mask filter: removed {removed} shapes outside boundary ({total_before} -> {total_after})")
+
+    # Combine all passes: Pass3 (bottom), Pass2, Pass1 (top)
+    all_shapes = pass3_shapes + pass2_shapes + pass1_shapes
+    all_groups = pass3_groups + pass2_groups + pass1_groups
+
+    # Offset all points by the crop origin (y1, x1) to put them in full image coordinates
+    for shape in all_shapes:
+        points = shape.points.numpy()
+        points[:, 0] += x1
+        points[:, 1] += y1
+        shape.points = torch.from_numpy(points).float()
+
+    return all_shapes, all_groups, len(all_shapes)
+
+
+def process_objects_as_layers(model, image_np, label_masks, n_segments=1500):
+    """
+    Process each object type as a separate layer using 3-pass SLIC.
+
+    Args:
+        model: SuperSVG model
+        image_np: Full image as numpy array (H, W, 3), values 0-1
+        label_masks: Dict mapping label -> combined mask
+        n_segments: Number of SLIC segments per layer (quality setting)
+
+    Returns:
+        List of dicts with 'label', 'shapes', 'groups', 'count'
+    """
+    layers = []
+
+    for label, mask in label_masks.items():
+        print(f"  Processing layer: {label} (3-pass SLIC, {n_segments} base segments)")
+        shapes, groups, count = process_single_object_mask(model, image_np, mask, label, n_segments)
+
+        if count > 0:
+            layers.append({
+                'label': label,
+                'shapes': shapes,
+                'groups': groups,
+                'count': count
+            })
+            print(f"    -> {count} shapes (3 passes combined)")
+        else:
+            print(f"    -> skipped (no shapes)")
+
+    return layers
+
+
+def save_svg_with_layers(svg_path, width, height, layers, bg_shape, bg_group):
+    """
+    Save SVG with named layer groups for each object.
+
+    Args:
+        svg_path: Output path
+        width: SVG width
+        height: SVG height
+        layers: List of layer dicts with 'label', 'shapes', 'groups'
+        bg_shape: Background shape
+        bg_group: Background group
+    """
+    # First, save with pydiffvg to get proper path data
+    all_shapes = [bg_shape]
+    all_groups = [bg_group]
+
+    layer_ranges = []  # Track which shapes belong to which layer
+    current_idx = 1  # Start after background
+
+    for layer in layers:
+        start_idx = current_idx
+        all_shapes.extend(layer['shapes'])
+        all_groups.extend(layer['groups'])
+        end_idx = current_idx + len(layer['shapes'])
+        layer_ranges.append({
+            'label': layer['label'],
+            'start': start_idx,
+            'end': end_idx
+        })
+        current_idx = end_idx
+
+    # Save initial SVG
+    pydiffvg.save_svg(svg_path, width, height, all_shapes, reindex_groups(all_groups))
+
+    # Post-process to add layer groups
+    add_layer_groups_to_svg(svg_path, layer_ranges)
+
+
+def add_layer_groups_to_svg(svg_path, layer_ranges):
+    """
+    Post-process SVG to wrap paths in named <g> groups for layers.
+    Uses Inkscape-compatible attributes for proper layer support in vector editors.
+
+    Args:
+        svg_path: Path to SVG file
+        layer_ranges: List of dicts with 'label', 'start', 'end' indices
+    """
+    with open(svg_path, 'r') as f:
+        content = f.read()
+
+    # Find all <path> elements - handle both self-closing (/>) and regular (>) tags
+    path_pattern = re.compile(r'(<path[^>]*(?:/>|>))', re.DOTALL)
+    paths = path_pattern.findall(content)
+
+    print(f"  Found {len(paths)} paths in SVG")
+
+    if not paths:
+        print("  Warning: No paths found in SVG!")
+        return
+
+    # Extract SVG header
+    svg_start_match = re.search(r'(<svg[^>]*>)', content)
+    if not svg_start_match:
+        print("  Warning: Could not find SVG header!")
+        return
+
+    svg_header = svg_start_match.group(1)
+
+    # Add Inkscape namespace if not present
+    if 'xmlns:inkscape' not in svg_header:
+        svg_header = svg_header.replace(
+            '<svg',
+            '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"'
+        )
+
+    # Build new content with layered structure
+    new_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    new_content += svg_header + '\n'
+    new_content += '<defs/>\n'
+
+    # Add background layer (first path)
+    new_content += '<g id="background" inkscape:label="Background" inkscape:groupmode="layer">\n'
+    new_content += f'  {paths[0]}\n'
+    new_content += '</g>\n'
+
+    # Group remaining paths by layer (in reverse order so first layer is on top)
+    for layer_info in reversed(layer_ranges):
+        label = layer_info['label']
+        start = layer_info['start']
+        end = layer_info['end']
+
+        # Sanitize label for XML id
+        safe_id = re.sub(r'[^a-zA-Z0-9_-]', '_', label)
+
+        layer_paths = paths[start:end]
+        if layer_paths:
+            new_content += f'<g id="{safe_id}" inkscape:label="{label}" inkscape:groupmode="layer">\n'
+            for path in layer_paths:
+                new_content += f'  {path}\n'
+            new_content += '</g>\n'
+            print(f"  Layer '{label}': {len(layer_paths)} paths")
+
+    new_content += '</svg>'
+
+    with open(svg_path, 'w') as f:
+        f.write(new_content)
+
+    print(f"  SVG saved with {len(layer_ranges)} layers")
+
+
+def mask_black_regions(image_np, threshold=0.08):
+    """Create a mask for non-black regions of the image."""
+    brightness = np.max(image_np, axis=2)
+    non_black_mask = brightness > threshold
+    return non_black_mask
+
+
+def filter_shapes_in_black_region(shapes, groups, non_black_mask, threshold_ratio=0.95):
+    """Filter out shapes that fall entirely within black regions."""
+    filtered_shapes = []
+    filtered_groups = []
+    h, w = non_black_mask.shape
+
+    for shape, group in zip(shapes, groups):
+        points = shape.points.numpy()
+
+        in_black = 0
+        total = len(points)
+
+        for pt in points:
+            x, y = int(pt[0]), int(pt[1])
+            x = max(0, min(x, w - 1))
+            y = max(0, min(y, h - 1))
+            if not non_black_mask[y, x]:
+                in_black += 1
+
+        black_ratio = in_black / total if total > 0 else 0
+        if black_ratio < threshold_ratio:
+            filtered_shapes.append(shape)
+            filtered_groups.append(group)
+
+    return filtered_shapes, filtered_groups
+
 
 def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=True, conf_thresh=0.3, num_rounds=1, quality='default'):
     """
@@ -461,48 +901,26 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     for layer in layers:
         print(f"  - {layer['label']}: {layer['count']} shapes")
 
-async def gpu_worker():
-    while True:
-        job = await job_queue.get()
-        job_id = job["job_id"]
+# ==============================================================================
+# FastAPI ROUTES (converted from Flask)
+# ==============================================================================
 
-        job_results[job_id]["status"] = JobStatus.RUNNING
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    return templates.TemplateResponse("index2.html", {"request": request})
 
-        try:
-            match job.job_type:
-                case 'super-svg':
-                    process_image_sam3(**job["payload"])
-                case 'sam3-segment':
-                    run_sam_inference(**job["payload"])
-            job_results[job_id]["status"] = JobStatus.DONE
-        except Exception as e:
-            traceback.print_exc()
-            job_results[job_id]["status"] = JobStatus.ERROR
-            job_results[job_id]["error"] = str(e)
-        finally:
-            job_queue.task_done()
-
-
-# -----------------------
-# FastAPI endpoints
-# -----------------------
-@app.on_event("startup")
-async def startup_event():
-    load_models()
-    asyncio.create_task(gpu_worker())
 
 @app.get("/status")
 async def status():
     return {
-        "device": device,
         "supersvg_loaded": supersvg_model is not None,
-        "sam3_loaded": sam3_model is not None,
-        "sam3_track_loaded": sam3_trackmodel is not None,
-        "queue_size": job_queue.qsize()
+        "sam3_service": check_sam3_service(),
+        "device": device,
     }
-    
+
+
 @app.post("/upload")
-async def upload(
+async def upload_file(
     file: UploadFile = File(...),
     use_ollama: bool = Form(True),
     conf_thresh: float = Form(0.3),
@@ -510,139 +928,88 @@ async def upload(
     quality: str = Form("default"),
 ):
     if not allowed_file(file.filename):
-        return JSONResponse({"error": "Invalid file type"}, status_code=400)
+        raise HTTPException(status_code=400, detail="Invalid file type")
 
     if quality not in QUALITY_SETTINGS:
         quality = "default"
 
-    job_id = str(uuid.uuid4())[:8]
+    uid = str(uuid.uuid4())[:8]
+    ext = file.filename.rsplit(".", 1)[1].lower()
 
-    input_path = os.path.join(UPLOAD_FOLDER, f"{job_id}_input.png")
-    output_svg = os.path.join(OUTPUT_FOLDER, f"{job_id}_output.svg")
-    output_png = os.path.join(OUTPUT_FOLDER, f"{job_id}_output.png")
+    input_path = os.path.join(UPLOAD_FOLDER, f"{uid}_input.{ext}")
+    svg_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.svg")
+    png_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.png")
 
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
-    job_results[job_id] = {
-        "status": JobStatus.PENDING,
-        "svg_url": f"/output/{os.path.basename(output_svg)}",
-        "png_url": f"/output/{os.path.basename(output_png)}",
-    }
-
-    await job_queue.put({
-        "job_id": job_id,
-        "job_type": "super-svg",
-        "payload": dict(
-            image_path=input_path,
-            output_svg_path=output_svg,
-            output_png_path=output_png,
+    try:
+        process_image_sam3(
+            input_path,
+            svg_path,
+            png_path,
             use_ollama=use_ollama,
             conf_thresh=conf_thresh,
             num_rounds=num_rounds,
             quality=quality,
         )
-    })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     return {
-        "job_id": job_id,
-        "status_url": f"/jobs/{job_id}"
+        "success": True,
+        "svg_url": f"/output/{os.path.basename(svg_path)}",
+        "png_url": f"/output/{os.path.basename(png_path)}",
     }
 
-@app.get("/jobs/{job_id}")
-async def job_status(job_id: str):
-    if job_id not in job_results:
-        return JSONResponse({"error": "Job not found"}, status_code=404)
-    return job_results[job_id]
+
+@app.get("/output/{filename}")
+async def serve_output(filename: str):
+    path = os.path.join(OUTPUT_FOLDER, filename)
+    return FileResponse(path)
+
 
 @app.get("/download/{filename}")
-async def download(filename: str):
+async def download_file(filename: str):
     path = os.path.join(OUTPUT_FOLDER, filename)
-    if not os.path.exists(path):
-        return JSONResponse({"error": "File not found"}, status_code=404)
-
     return FileResponse(path, filename=filename)
 
-@app.post("/segment")
-async def segment_endpoint(
-    # One of these must be provided
-    image: UploadFile = File(None),
-    image_url: Optional[str] = Form(None),
+# ------------------------------------------------------------------------------
+# CLI / Server entrypoint
+# ------------------------------------------------------------------------------
 
-    # Prompts
-    prompt: Optional[str] = Form(None),
-
-    # Optional point prompts (JSON strings)
-    points: Optional[str] = Form(None),
-    point_labels: Optional[str] = Form(None),
-
-    # Optional box prompt (JSON string)
-    box: Optional[str] = Form(None),
-
-    min_area: Optional[int] = Form(0),
-):
-    # -----------------------------
-    # Load image (file OR URL)
-    # -----------------------------
-    if image is None and image_url is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Either 'image' file or 'image_url' must be provided"
-        )
-
-    if image is not None and image_url is not None:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide only one of 'image' or 'image_url'"
-        )
-
-    if image_url:
-        pil_img = await load_image_from_url(image_url)
-    else:
-        contents = await image.read()
-        try:
-            pil_img = Image.open(io.BytesIO(contents)).convert("RGB")
-        except Exception as e:
-            raise HTTPException(400, f"Could not decode uploaded image: {e}")
-
-    img_np = np.array(pil_img)
-
-    original_h, original_w = img_np.shape[:2]
-
-    pts = json.loads(points) if points else None
-    lbls = json.loads(point_labels) if point_labels else None
-    bx = json.loads(box) if box else None
-
-    # async SAM3 inference
-    sam_outputs = await run_sam_inference(
-        image=img_np,
-        prompt=prompt,
-        points=pts,
-        point_labels=lbls,
-        box=bx,
-        min_area=min_area,
-    )
-
-    segments_out = []
-    for idx, seg in enumerate(sam_outputs):
-        mask = seg["mask"]
-        mask_b64 = mask_to_base64_png(mask)
-
-        segments_out.append({
-            "id": idx,
-            # "bbox": seg["bbox"],
-            "mask_base64": mask_b64,
-            "area": int(mask.sum()),
-            # "score": seg["score"]
-        })
-
-    return {"segments": segments_out, "num_segments": len(segments_out)}
-
-
-# -----------------------
-# Run server
-# -----------------------
 if __name__ == "__main__":
-    port = get_server_port()
-    print(f"Starting server on port {port}")
-    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=str)
+    parser.add_argument("--output-dir", type=str, default=OUTPUT_FOLDER)
+    parser.add_argument("--max-dim", type=int, default=4096)
+    parser.add_argument("--no-ollama", action="store_true")
+    parser.add_argument("--conf-thresh", type=float, default=0.3)
+    parser.add_argument("--num-rounds", type=int, default=1)
+    parser.add_argument("--host", type=str, default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=5001)
+    args = parser.parse_args()
+
+    if args.input:
+        os.makedirs(args.output_dir, exist_ok=True)
+        base = os.path.splitext(os.path.basename(args.input))[0]
+        svg_out = os.path.join(args.output_dir, f"{base}_sam3_output.svg")
+        png_out = os.path.join(args.output_dir, f"{base}_sam3_output.png")
+
+        process_image_sam3(
+            args.input,
+            svg_out,
+            png_out,
+            max_dim=args.max_dim,
+            use_ollama=not args.no_ollama,
+            conf_thresh=args.conf_thresh,
+            num_rounds=args.num_rounds,
+        )
+    else:
+        import uvicorn
+
+        print("Starting FastAPI server (models load on-demand)")
+        print(f"SAM3 service: {SAM3_SERVICE_URL}")
+        print(f"Device: {device}")
+
+        uvicorn.run(app, host=args.host, port=args.port)

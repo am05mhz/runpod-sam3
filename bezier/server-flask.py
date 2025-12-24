@@ -1,109 +1,77 @@
+"""
+app3.py - Bezier Splatting Flask App with CORRECT SVG Generation
+
+UNDERSTANDING FROM THE PAPER:
+- Paper's Algorithm 2 describes SVG conversion for 3k+1 control points (k cubic segments)
+- BUT for closed mode with bezier_degree=4, the model stores 10 points = 2*(4+1)
+- These 10 points represent TWO degree-4 Bezier curves forming the boundaries of a closed region
+- The "paired Bezier curve structure" (Section 3.3) uses two curves B1(t) and BR+1(t)
+  that share start/end points, forming a closed region
+
+CORRECT SVG GENERATION FOR CLOSED MODE:
+According to the paper's Section 3.3 on "Sampling Gaussians on closed curves":
+- Two Bezier curves form the boundaries (bezier1 and bezier2)
+- The area BETWEEN them is filled using interpolated curves
+- For SVG, we should trace the outline: bezier1 -> bezier2_reversed -> close
+
+Control points structure (closed mode, bezier_degree=4, num_beziers=2):
+- total_pts = 2 * (4+1) = 10 points
+- M = (total_pts - 2) // 2 = 4 (the bezier degree)
+- bezier1 = points[0:M+2] = points[0:6] (6 control points, degree 5)
+- bezier2 = points[M+1:] + points[0:1], flipped (6 control points, degree 5)
+
+The SVG path traces the BOUNDARY of the filled region.
+"""
 import os
 import uuid
 import math
 import time
 import json
 import threading
-import argparse
-import uvicorn
 from datetime import datetime
 from pathlib import Path
-
-from fastapi import (
-    FastAPI,
-    UploadFile,
-    File,
-    Form,
-    HTTPException,
-    Request
-)
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
-
+from flask import Flask, render_template, request, jsonify, send_from_directory, url_for
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
-
 import torch
 import numpy as np
 from PIL import Image
 import torchvision.transforms as transforms
 from pytorch_msssim import ms_ssim
 import torch.nn.functional as F
+import svgwrite
+from scipy.special import comb
 
-# -------------------------
-# App setup
-# -------------------------
+app = Flask(__name__)
+CORS(app, origins="*")
 
-app = FastAPI(title="Bezier Splatting API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-BASE_DIR = Path(__file__).parent
-UPLOAD_FOLDER = BASE_DIR / "uploads"
-RESULT_FOLDER = BASE_DIR / "result"
-TEMPLATES_DIR = BASE_DIR / "templates"
+# Configuration
+UPLOAD_FOLDER = Path('./uploads')
+RESULT_FOLDER = Path('./result')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 RESULT_FOLDER.mkdir(exist_ok=True)
-TEMPLATES_DIR.mkdir(exist_ok=True)
 
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['RESULT_FOLDER'] = RESULT_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
 
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
-
-# In-memory job store
+# Store job status
 jobs = {}
 
-# -------------------------
-# Utilities
-# -------------------------
 
-def allowed_file(filename: str) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def image_path_to_tensor(image_path: Path):
-    img = Image.open(image_path).convert("RGB")
+    img = Image.open(image_path).convert('RGB')
     transform = transforms.ToTensor()
-    return transform(img).unsqueeze(0)
+    img_tensor = transform(img).unsqueeze(0)
+    return img_tensor
 
-def get_server_port():
-    # --- CLI ---
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=None, help="Port for the server")
-    args, _ = parser.parse_known_args()
 
-    if args.port:
-        return args.port
-
-    # --- System environment variables ---
-    if "PORT" in os.environ:
-        return int(os.environ["PORT"])
-
-    # At this point, .env is already merged into os.environ by load_dotenv()
-
-    # --- Default ---
-    return 8000
-
-# -------------------------------------------------------
-# 🚨 EVERYTHING BELOW IS YOUR ORIGINAL LOGIC (UNCHANGED)
-# -------------------------------------------------------
-# sample_bezier_curve
-# generate_svg_from_model
-# generate_svg_interpolated_fill
-# generate_svg_splats
-# generate_svg_polygons
-# Args
-# run_bezier_splatting
-# run_continue_training
-#
-# ⬆️ Paste them here WITHOUT MODIFICATION
-# -------------------------------------------------------
 def sample_bezier_curve(control_points, num_samples=50):
     """
     Sample points along a Bezier curve of any degree using Bernstein polynomials.
@@ -119,6 +87,8 @@ def sample_bezier_curve(control_points, num_samples=50):
             point += basis * control_points[j]
         result[i] = point
     return result
+
+
 def generate_svg_from_model(gaussian_model, svg_path, canvas_width, canvas_height,
                             samples_per_curve=100, use_splats=False):
     """
@@ -587,6 +557,7 @@ def generate_svg_polygons(gaussian_model, svg_path, canvas_width, canvas_height,
     dwg.save()
     return True
 
+
 class Args:
     """Arguments class to mimic argparse namespace"""
     def __init__(self, **kwargs):
@@ -733,6 +704,109 @@ def run_bezier_splatting(job_id, image_path, args):
         import traceback
         print(f"Error processing job {job_id}: {traceback.format_exc()}")
 
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    if file and allowed_file(file.filename):
+        job_id = str(uuid.uuid4())[:8]
+
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit('.', 1)[1].lower()
+        saved_filename = f"{job_id}_input.{ext}"
+        filepath = UPLOAD_FOLDER / saved_filename
+        file.save(filepath)
+
+        args = Args(
+            num_curves=int(request.form.get('num_curves', 512)),
+            bezier_degree=int(request.form.get('bezier_degree', 4)),
+            num_samples=int(request.form.get('num_samples', 64)),
+            iterations=int(request.form.get('iterations', 10000)),
+            mode=request.form.get('mode', 'closed'),
+            lr=float(request.form.get('lr', 0.01)),
+            image_name=filename
+        )
+
+        jobs[job_id] = {
+            'status': 'queued',
+            'progress': 0,
+            'input_file': saved_filename,
+            'params': {
+                'num_curves': args.num_curves,
+                'bezier_degree': args.bezier_degree,
+                'iterations': args.iterations,
+                'mode': args.mode,
+                'lr': args.lr
+            }
+        }
+
+        thread = threading.Thread(
+            target=run_bezier_splatting,
+            args=(job_id, filepath, args)
+        )
+        thread.daemon = True
+        thread.start()
+
+        return jsonify({
+            'job_id': job_id,
+            'message': 'Processing started',
+            'status_url': url_for('job_status', job_id=job_id)
+        })
+
+    return jsonify({'error': 'Invalid file type'}), 400
+
+
+@app.route('/status/<job_id>')
+def job_status(job_id):
+    if job_id not in jobs:
+        return jsonify({'error': 'Job not found'}), 404
+    return jsonify(jobs[job_id])
+
+
+@app.route('/result/<path:filename>')
+def get_result(filename):
+    return send_from_directory(app.config['RESULT_FOLDER'], filename)
+
+
+@app.route('/uploads/<filename>')
+def get_upload(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/jobs')
+def list_jobs():
+    return jsonify(jobs)
+
+
+@app.route('/history')
+def list_history():
+    """List past jobs from result folder metadata files (last 10)"""
+    history = []
+    metadata_files = list(RESULT_FOLDER.glob('*/metadata.json'))
+
+    for meta_file in metadata_files:
+        try:
+            with open(meta_file, 'r') as f:
+                metadata = json.load(f)
+                history.append(metadata)
+        except Exception as e:
+            print(f"Error reading {meta_file}: {e}")
+
+    history.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    return jsonify(history[:10])
+
+
 def run_continue_training(job_id, original_job_id, additional_iterations, image_path, args):
     """Continue training from a checkpoint"""
     try:
@@ -864,233 +938,127 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
         import traceback
         print(f"Error continuing job {job_id}: {traceback.format_exc()}")
 
-# =======================================================
-# Routes
-# =======================================================
 
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-
-@app.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    num_curves: int = Form(512),
-    bezier_degree: int = Form(4),
-    num_samples: int = Form(64),
-    iterations: int = Form(10000),
-    mode: str = Form("closed"),
-    lr: float = Form(0.01),
-):
-    if not allowed_file(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type")
-
-    job_id = str(uuid.uuid4())[:8]
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[1].lower()
-    saved_filename = f"{job_id}_input.{ext}"
-    filepath = UPLOAD_FOLDER / saved_filename
-
-    with open(filepath, "wb") as f:
-        f.write(await file.read())
-
-    args = Args(
-        num_curves=num_curves,
-        bezier_degree=bezier_degree,
-        num_samples=num_samples,
-        iterations=iterations,
-        mode=mode,
-        lr=lr,
-        image_name=filename,
-    )
-
-    jobs[job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "input_file": saved_filename,
-        "params": {
-            "num_curves": num_curves,
-            "bezier_degree": bezier_degree,
-            "iterations": iterations,
-            "mode": mode,
-            "lr": lr,
-        },
-    }
-
-    thread = threading.Thread(
-        target=run_bezier_splatting,
-        args=(job_id, filepath, args),
-        daemon=True,
-    )
-    thread.start()
-
-    return {
-        "job_id": job_id,
-        "message": "Processing started",
-        "status_url": f"/status/{job_id}",
-    }
-
-
-@app.get("/status/{job_id}")
-def job_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
-
-
-@app.get("/jobs")
-def list_jobs():
-    return jobs
-
-
-@app.get("/history")
-def list_history():
-    history = []
-    for meta_file in RESULT_FOLDER.glob("*/metadata.json"):
-        try:
-            with open(meta_file, "r") as f:
-                history.append(json.load(f))
-        except Exception:
-            pass
-
-    history.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return history[:10]
-
-
-@app.get("/result/{path:path}")
-def get_result(path: str):
-    file_path = RESULT_FOLDER / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(file_path)
-
-
-@app.get("/uploads/{filename}")
-def get_upload(filename: str):
-    file_path = UPLOAD_FOLDER / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(file_path)
-
-
-@app.post("/continue/{original_job_id}")
-def continue_training_endpoint(
-    original_job_id: str,
-    iterations: int = Form(5000),
-):
+@app.route('/continue/<original_job_id>', methods=['POST'])
+def continue_training(original_job_id):
+    """Continue training from a previous job"""
     metadata_path = RESULT_FOLDER / original_job_id / "metadata.json"
     if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail="Original job not found")
+        return jsonify({'error': 'Original job not found'}), 404
 
-    with open(metadata_path) as f:
+    with open(metadata_path, 'r') as f:
         original_meta = json.load(f)
 
+    additional_iterations = int(request.form.get('iterations', 5000))
     job_id = str(uuid.uuid4())[:8]
-    input_file = original_meta["input_file"]
+
+    input_file = original_meta['input_file']
     image_path = UPLOAD_FOLDER / input_file
 
     if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Original image not found")
+        return jsonify({'error': 'Original image not found'}), 404
 
-    params = original_meta["params"]
+    original_params = original_meta['params']
     args = Args(
-        num_curves=params["num_curves"],
-        bezier_degree=params["bezier_degree"],
-        num_samples=params.get("num_samples", 64),
-        iterations=iterations,
-        mode=params["mode"],
-        lr=params["lr"],
-        image_name=original_meta.get("original_filename", "image.png"),
+        num_curves=original_params['num_curves'],
+        bezier_degree=original_params['bezier_degree'],
+        num_samples=original_params.get('num_samples', 64),
+        iterations=additional_iterations,
+        mode=original_params['mode'],
+        lr=original_params['lr'],
+        image_name=original_meta.get('original_filename', 'image.png')
     )
 
     jobs[job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "input_file": input_file,
-        "continued_from": original_job_id,
-        "params": params,
+        'status': 'queued',
+        'progress': 0,
+        'input_file': input_file,
+        'continued_from': original_job_id,
+        'params': original_params
     }
 
     thread = threading.Thread(
         target=run_continue_training,
-        args=(job_id, original_job_id, iterations, image_path, args),
-        daemon=True,
+        args=(job_id, original_job_id, additional_iterations, image_path, args)
     )
+    thread.daemon = True
     thread.start()
 
-    return {
-        "job_id": job_id,
-        "message": f"Continuing training from {original_job_id}",
-        "additional_iterations": iterations,
-        "status_url": f"/status/{job_id}",
-    }
+    return jsonify({
+        'job_id': job_id,
+        'message': f'Continuing training from {original_job_id}',
+        'additional_iterations': additional_iterations,
+        'status_url': url_for('job_status', job_id=job_id)
+    })
 
 
-@app.post("/convert/{job_id}")
-def regenerate_svg(job_id: str):
+@app.route('/convert/<job_id>', methods=['POST'])
+def regenerate_svg(job_id):
+    """Regenerate SVG from an existing model checkpoint"""
     metadata_path = RESULT_FOLDER / job_id / "metadata.json"
+    if not metadata_path.exists():
+        return jsonify({'error': 'Job not found'}), 404
+
     model_path = RESULT_FOLDER / job_id / "model.pth.tar"
+    if not model_path.exists():
+        return jsonify({'error': 'Model checkpoint not found'}), 404
 
-    if not metadata_path.exists() or not model_path.exists():
-        raise HTTPException(status_code=404, detail="Job or model not found")
-
-    with open(metadata_path) as f:
+    with open(metadata_path, 'r') as f:
         metadata = json.load(f)
 
     try:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        input_file = metadata["input_file"]
+
+        input_file = metadata['input_file']
         image_path = UPLOAD_FOLDER / input_file
         gt_image = image_path_to_tensor(image_path).to(device)
         H, W = gt_image.shape[2], gt_image.shape[3]
 
+        params = metadata['params']
+
         from gaussianimage_cholesky_svg import GaussianImage_Cholesky
 
-        params = metadata["params"]
         gaussian_model = GaussianImage_Cholesky(
             loss_type="L2",
             opt_type="adan",
-            num_curves=params["num_curves"],
-            num_samples=params.get("num_samples", 64),
-            H=H,
-            W=W,
-            BLOCK_H=16,
-            BLOCK_W=16,
+            num_curves=params['num_curves'],
+            num_samples=params.get('num_samples', 64),
+            H=H, W=W,
+            BLOCK_H=16, BLOCK_W=16,
             device=device,
-            lr=params["lr"],
-            mode=params["mode"],
-            bezier_degree=params["bezier_degree"],
-            quantize=False,
+            lr=params['lr'],
+            mode=params['mode'],
+            bezier_degree=params['bezier_degree'],
+            quantize=False
         ).to(device)
 
         checkpoint = torch.load(model_path, map_location=device)
         model_dict = gaussian_model.state_dict()
-        model_dict.update({
-            k: v for k, v in checkpoint.items()
-            if k in model_dict and v.shape == model_dict[k].shape
-        })
+        pretrained_dict = {k: v for k, v in checkpoint.items() if k in model_dict and v.shape == model_dict[k].shape}
+        model_dict.update(pretrained_dict)
         gaussian_model.load_state_dict(model_dict, strict=False)
+
         gaussian_model.eval()
 
         svg_path = RESULT_FOLDER / job_id / "result.svg"
         generate_svg_from_model(gaussian_model, str(svg_path), W, H)
 
-        return {
-            "success": True,
-            "svg_file": f"{job_id}/result.svg",
-        }
+        return jsonify({
+            'success': True,
+            'message': 'SVG regenerated successfully',
+            'svg_file': f"{job_id}/result.svg"
+        })
 
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)},
-        )
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
-# -----------------------
-# Run server
-# -----------------------
-if __name__ == "__main__":
-    port = get_server_port()
-    print(f"Starting server on port {port}")
-    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
+
+if __name__ == '__main__':
+    templates_dir = Path('./templates')
+    templates_dir.mkdir(exist_ok=True)
+
+    app.run(host='0.0.0.0', port=5000, debug=True)

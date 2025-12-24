@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuperSVG + SAM3 - AI-Powered Image to SVG</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .badge-experimental {
+            background: linear-gradient(90deg, #ff6b6b, #feca57);
+            color: #1a1a2e;
+        }
+
+        .drop-zone {
+            border: 3px dashed #48dbfb;
+            border-radius: 20px;
+            padding: 60px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.05);
+            margin-bottom: 30px;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #feca57;
+            background: rgba(254, 202, 87, 0.1);
+            transform: scale(1.02);
+        }
+
+        .drop-zone-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone-text {
+            font-size: 1.2rem;
+            color: #ccc;
+        }
+
+        .drop-zone-text span {
+            color: #48dbfb;
+            text-decoration: underline;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        .preview-container {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+
+        .preview-box {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .preview-box h3 {
+            margin-bottom: 15px;
+            color: #48dbfb;
+        }
+
+        .preview-box img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 10px;
+            background: white;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #48dbfb;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-status {
+            color: #feca57;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+
+        .download-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #48dbfb, #feca57);
+            color: #1a1a2e;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 2px solid #48dbfb;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(72, 219, 251, 0.3);
+        }
+
+        .error {
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid #ff4444;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .options {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .option-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .option-group label {
+            color: #ccc;
+            font-size: 0.9rem;
+        }
+
+        .option-group select,
+        .option-group input[type="number"] {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #48dbfb;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        .option-group select option {
+            background: #1a1a2e;
+            color: #fff;
+        }
+
+        .option-group input[type="number"] {
+            width: 70px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: 0.3s;
+            border-radius: 26px;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle input:checked + .toggle-slider {
+            background: linear-gradient(90deg, #48dbfb, #feca57);
+        }
+
+        .toggle input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+
+        .info-box {
+            background: rgba(72, 219, 251, 0.1);
+            border: 1px solid #48dbfb;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .info-box strong {
+            color: #48dbfb;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-ok {
+            background: #00ff88;
+        }
+
+        .status-warning {
+            background: #feca57;
+        }
+
+        .status-error {
+            background: #ff6b6b;
+        }
+
+        @media (max-width: 768px) {
+            .preview-container {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .drop-zone {
+                padding: 40px 20px;
+            }
+
+            .options {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SuperSVG + SAM3 <span class="badge badge-experimental">Experimental</span></h1>
+        <p class="subtitle">
+            AI-Powered Semantic Segmentation + Vector Graphics Synthesis
+        </p>
+
+        <div class="info-box">
+            <strong>How it works:</strong>
+            Ollama (Qwen 2.5 VL) detects objects in your image, then SAM3 segments each object.
+            Each object layer goes through 3-pass SLIC superpixel processing for quality vectorization.
+            Models are loaded on-demand to manage VRAM.
+        </div>
+
+        <div class="options">
+            <div class="option-group toggle-container">
+                <label>Use Ollama AI Detection:</label>
+                <label class="toggle">
+                    <input type="checkbox" id="use-ollama" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="option-group">
+                <label for="quality">Quality:</label>
+                <select id="quality">
+                    <option value="low">Low (500 segments)</option>
+                    <option value="default" selected>Default (1500 segments)</option>
+                    <option value="high">High (5000 segments)</option>
+                    <option value="best">Best (10000 segments)</option>
+                </select>
+            </div>
+
+            <div class="option-group">
+                <label for="conf-thresh">Confidence:</label>
+                <select id="conf-thresh">
+                    <option value="0.2">Low (0.2)</option>
+                    <option value="0.3" selected>Medium (0.3)</option>
+                    <option value="0.5">High (0.5)</option>
+                    <option value="0.7">Very High (0.7)</option>
+                </select>
+            </div>
+
+            <div class="option-group" id="rounds-group">
+                <label for="num-rounds">Detection Rounds:</label>
+                <input type="number" id="num-rounds" value="1" min="1" max="5">
+            </div>
+        </div>
+
+        <div class="drop-zone" id="drop-zone">
+            <div class="drop-zone-icon">🎨</div>
+            <p class="drop-zone-text">
+                Drag & drop an image here<br>
+                or <span>click to browse</span>
+            </p>
+            <input type="file" id="file-input" accept="image/*">
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing image with AI segmentation...</p>
+            <p class="loading-status" id="loading-status">This may take 1-3 minutes depending on image complexity.</p>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="preview-container" id="preview-container">
+            <div class="preview-box">
+                <h3>Original Image</h3>
+                <img id="original-preview" src="" alt="Original">
+            </div>
+            <div class="preview-box">
+                <h3>SVG Output</h3>
+                <img id="svg-preview" src="" alt="SVG Output">
+                <div class="download-buttons">
+                    <a id="download-svg" class="btn btn-primary" href="#" download>Download SVG</a>
+                    <a id="download-png" class="btn btn-secondary" href="#" download>Download PNG</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const loading = document.getElementById('loading');
+        const loadingStatus = document.getElementById('loading-status');
+        const error = document.getElementById('error');
+        const previewContainer = document.getElementById('preview-container');
+        const originalPreview = document.getElementById('original-preview');
+        const svgPreview = document.getElementById('svg-preview');
+        const downloadSvg = document.getElementById('download-svg');
+        const downloadPng = document.getElementById('download-png');
+        const useOllama = document.getElementById('use-ollama');
+        const roundsGroup = document.getElementById('rounds-group');
+
+        // Toggle rounds visibility based on Ollama setting
+        useOllama.addEventListener('change', () => {
+            roundsGroup.style.display = useOllama.checked ? 'flex' : 'none';
+        });
+
+        // Click to browse
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // Drag and drop events
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        // File input change
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showError('Please select an image file.');
+                return;
+            }
+
+            // Show original preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                originalPreview.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            // Upload and process
+            uploadFile(file);
+        }
+
+        async function uploadFile(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Add options
+            formData.append('use_ollama', useOllama.checked ? 'true' : 'false');
+            formData.append('conf_thresh', document.getElementById('conf-thresh').value);
+            formData.append('num_rounds', document.getElementById('num-rounds').value);
+            formData.append('quality', document.getElementById('quality').value);
+
+            // Show loading, hide others
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            previewContainer.style.display = 'none';
+
+            // Update status messages
+            const statusMessages = [
+                'Initializing AI models...',
+                'Detecting objects with Qwen Vision AI...',
+                'Running SAM3 segmentation...',
+                'Processing each layer with 3-pass SLIC...',
+                'Generating vector paths with SuperSVG...',
+                'Optimizing SVG output...',
+                'Almost done...'
+            ];
+            let statusIndex = 0;
+            const statusInterval = setInterval(() => {
+                if (statusIndex < statusMessages.length) {
+                    loadingStatus.textContent = statusMessages[statusIndex];
+                    statusIndex++;
+                }
+            }, 15000);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show preview
+                    svgPreview.src = result.png_url;
+                    previewContainer.style.display = 'grid';
+                    downloadSvg.href = '/download/' + result.svg_filename;
+                    downloadPng.href = '/download/' + result.png_filename;
+                } else {
+                    showError(result.error || 'An error occurred while processing the image.');
+                }
+            } catch (err) {
+                showError('Network error. Please try again.');
+            } finally {
+                clearInterval(statusInterval);
+                loading.style.display = 'none';
+            }
+        }
+
+        function showError(message) {
+            error.textContent = message;
+            error.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

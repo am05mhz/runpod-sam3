@@ -60,8 +60,8 @@ RUN add-apt-repository --yes ppa:deadsnakes/ppa && \
     git
 
 # Create and activate a Python virtual environment
-RUN python3 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
+RUN python3 -m venv /app/venv/apps
+RUN python3 -m venv /app/venv/bezier
 
 # Install Python packages
 RUN pip install --no-cache-dir \
@@ -83,10 +83,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy all of our files into the container
 # COPY handler.py $WORKSPACE_DIR/handler.py
-COPY sam3/server.py $WORKSPACE_DIR/sam3/server.py
-COPY bezier/server.py $WORKSPACE_DIR/bezier/server.py
-COPY supersvg/server.py $WORKSPACE_DIR/supersvg/server.py
-ADD supersvg/ckpts $WORKSPACE_DIR/supersvg/ckpts
+ADD sam3 $WORKSPACE_DIR/sam3
+ADD bezier $WORKSPACE_DIR/bezier
+ADD supersvg $WORKSPACE_DIR/supersvg
 COPY start.sh /start.sh
 
 # Make sure start.sh is executable
