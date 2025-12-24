@@ -8,7 +8,7 @@ aiohttp>=3.9
 
 # Image processing
 pillow>=10.0
-numpy>=1.24
+numpy<2
 
 # Deep learning
 torch>=2.0

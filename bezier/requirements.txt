@@ -6,7 +6,7 @@ pillow
 pytorch_msssim
 svgwrite
 fastapi
-numpy
+numpy<2
 uvicorn
 python-multipart
 jinja2

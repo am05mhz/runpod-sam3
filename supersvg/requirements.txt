@@ -1,6 +1,6 @@
 torch
 torchvision
-numpy
+numpy<2
 scikit-image
 #anaconda
 fastapi
