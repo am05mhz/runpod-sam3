@@ -521,10 +521,10 @@
 
                 if (result.success) {
                     // Show preview
-                    svgPreview.src = result.png_url;
+                    svgPreview.src = '/output/' + result.png_url;
                     previewContainer.style.display = 'grid';
-                    downloadSvg.href = '/download/' + result.svg_filename;
-                    downloadPng.href = '/download/' + result.png_filename;
+                    downloadSvg.href = '/download/' + result.svg_url;
+                    downloadPng.href = '/download/' + result.png_url;
                 } else {
                     showError(result.error || 'An error occurred while processing the image.');
                 }

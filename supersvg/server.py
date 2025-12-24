@@ -155,6 +155,47 @@ def reindex_groups(groups):
 def svg_to_png(svg_path, png_path):
     cairosvg.svg2png(url=svg_path, write_to=png_path)
 
+
+def optimize_svg_precision(svg_path, decimals=2):
+    """Post-process SVG to reduce decimal precision for smaller file size."""
+    with open(svg_path, 'r') as f:
+        content = f.read()
+
+    original_size = len(content)
+
+    def round_number(match):
+        num_str = match.group(0)
+        try:
+            num = float(num_str)
+            rounded = round(num, decimals)
+            if rounded == int(rounded):
+                return str(int(rounded))
+            else:
+                return f"{rounded:.{decimals}f}".rstrip('0').rstrip('.')
+        except ValueError:
+            return num_str
+
+    def process_d_attr(match):
+        d_content = match.group(1)
+        processed = re.sub(r'-?\d+\.\d+', round_number, d_content)
+        return f'd="{processed}"'
+
+    content = re.sub(r'd="([^"]*)"', process_d_attr, content)
+
+    def process_fill(match):
+        fill_content = match.group(1)
+        processed = re.sub(r'-?\d+\.\d+', round_number, fill_content)
+        return f'fill="{processed}"'
+
+    content = re.sub(r'fill="([^"]*)"', process_fill, content)
+
+    with open(svg_path, 'w') as f:
+        f.write(content)
+
+    new_size = len(content)
+    reduction = ((original_size - new_size) / original_size) * 100
+    print(f"SVG optimized: {original_size:,} -> {new_size:,} bytes ({reduction:.1f}% reduction)")
+
 # ------------------------------------------------------------------------------
 # (ALL image processing, SAM3, SLIC, SVG logic BELOW IS IDENTICAL)
 # ------------------------------------------------------------------------------
@@ -845,10 +886,10 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
         label_masks['_remaining'] = remaining_mask.astype(np.uint8)
         print(f"Added '_remaining' layer for uncovered areas")
 
-    # Step 3: Unload SAM3 and load SuperSVG (VRAM management)
-    print("\n--- Step 3: VRAM Management - Swap Models ---")
-    unload_sam3_via_service()
-    clear_gpu_memory()
+    # # Step 3: Unload SAM3 and load SuperSVG (VRAM management)
+    # print("\n--- Step 3: VRAM Management - Swap Models ---")
+    # unload_sam3_via_service()
+    # clear_gpu_memory()
 
     print("\n--- Step 4: Loading SuperSVG ---")
     model = load_supersvg_model()
@@ -958,8 +999,8 @@ async def upload_file(
 
     return {
         "success": True,
-        "svg_url": f"/output/{os.path.basename(svg_path)}",
-        "png_url": f"/output/{os.path.basename(png_path)}",
+        "svg_url": f"{os.path.basename(svg_path)}",
+        "png_url": f"{os.path.basename(png_path)}",
     }
 
 

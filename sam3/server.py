@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
@@ -119,11 +119,11 @@ def get_server_port():
 def image_from_base64(b64_string):
     """Convert base64 string to PIL Image."""
     image_data = base64.b64decode(b64_string)
-    return Image.open(BytesIO(image_data)).convert('RGB')
+    return Image.open(io.BytesIO(image_data)).convert('RGB')
 
 def masks_to_base64(masks):
     """Convert numpy masks to base64 encoded compressed format."""
-    buffer = BytesIO()
+    buffer = io.BytesIO()
     np.savez_compressed(buffer, masks=masks)
     buffer.seek(0)
     return base64.b64encode(buffer.read()).decode('utf-8')
@@ -187,6 +187,7 @@ async def run_sam_inference(
     point_labels: list[int] | None = None,
     box: list[int] | None = None,
     min_area: int = 0,
+    threshold: float = 0.5,
     for_svg: bool = False,
 ) -> list[dict]:
     """
@@ -219,7 +220,7 @@ async def run_sam_inference(
                 # Post-process to get masks & boxes
                 results = hf_sam3_processor.post_process_instance_segmentation(
                     outputs,
-                    threshold=0.8,                          # score threshold
+                    threshold=threshold,                          # score threshold
                     mask_threshold=0.8,                     # binarize mask
                     target_sizes=hf_inputs.get("original_sizes").tolist()
                 )[0]  # first image only
@@ -237,6 +238,7 @@ async def run_sam_inference(
 
                     return {
                         'masks': masks_b64,
+                        'num_masks': len(raw_masks),
                         'scores': raw_scores
                     }
 
@@ -297,6 +299,14 @@ async def run_sam_inference(
 # -----------------------
 # FastAPI endpoint
 # -----------------------
+@app.get('/health')
+async def health_check(request: Request):
+    return {
+        'status': 'ok',
+        'model_loaded': True,
+        'device': device
+    }
+
 @app.post("/segment")
 async def segment_endpoint(
     # One of these must be provided
@@ -355,6 +365,7 @@ async def segment_endpoint(
         point_labels=lbls,
         box=bx,
         min_area=min_area,
+        threshold=0.8,
     )
 
     segments_out = []
@@ -372,37 +383,34 @@ async def segment_endpoint(
 
     return {"segments": segments_out, "num_segments": len(segments_out)}
 
+class TextPrompt(BaseModel):
+    image: str | None = None
+    image_url: str | None = None
+    query: str | None = None
+    conf_thresh: float = 0.8
+
 @app.post("/segment_text")
-async def segment_text_endpoint(
-    # One of these must be provided
-    image: str = Form(None),
-    image_url: Optional[str] = Form(None),
-
-    # Prompts
-    prompt: Optional[str] = Form(None),
-
-    min_area: Optional[int] = Form(0),
-):
+async def segment_text_endpoint(prompt: TextPrompt):
     # -----------------------------
     # Load image (file OR URL)
     # -----------------------------
-    if image is None and image_url is None:
+    if prompt.image is None and prompt.image_url is None:
         raise HTTPException(
             status_code=400,
             detail="Either 'image' file or 'image_url' must be provided"
         )
 
-    if image is not None and image_url is not None:
+    if prompt.image is not None and prompt.image_url is not None:
         raise HTTPException(
             status_code=400,
             detail="Provide only one of 'image' or 'image_url'"
         )
 
-    if image_url:
-        pil_img = await load_image_from_url(image_url)
+    if prompt.image_url:
+        pil_img = await load_image_from_url(prompt.image_url)
     else:
         try:
-            pil_img = image_from_base64(image)
+            pil_img = image_from_base64(prompt.image)
         except Exception as e:
             raise HTTPException(400, f"Could not decode uploaded image: {e}")
 
@@ -413,12 +421,12 @@ async def segment_text_endpoint(
     # async SAM3 inference
     sam_outputs = await run_sam_inference(
         image=img_np,
-        prompt=prompt,
-        min_area=min_area,
+        prompt=prompt.query,
+        threshold=prompt.conf_thresh,
         for_svg=True,
     )
 
-    return {"masks": sam_outputs["masks"], "num_masks": len(sam_outputs["masks"]), "scores": sam_outputs["scores"]}
+    return {"masks": sam_outputs["masks"], "num_masks": sam_outputs["num_masks"], "scores": sam_outputs["scores"]}
 
 
 # -----------------------
