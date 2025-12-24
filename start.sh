@@ -81,7 +81,7 @@ setup_bezier() {
     pip install --upgrade --no-cache-dir -r requirements.txt
     if [ ! -d "/workspace/apps/bezier/gsplat" ] || [ ! -f "/workspace/apps/bezier/gsplat/setup.py" ]; then
         if [ -d "/workspace/apps/bezier/gsplat" ]; then
-            rm -r /workspace/apps/besier/gsplat
+            rm -rf /workspace/apps/besier/gsplat
         fi
         git clone https://github.com/XingtongGe/gsplat.git
     fi
