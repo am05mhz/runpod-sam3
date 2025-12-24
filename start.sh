@@ -83,6 +83,7 @@ setup_bezier() {
         git clone https://github.com/XingtongGe/gsplat.git
     fi
     cd gsplat
+    ls -la
     pip install -e .
 }
 
