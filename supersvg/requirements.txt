@@ -2,7 +2,9 @@ torch
 torchvision
 numpy
 scikit-image
-anaconda
+#anaconda
+fastapi
+uvicorn
 cmake
 #conda-forge
 ffmpeg

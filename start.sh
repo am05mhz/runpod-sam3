@@ -42,6 +42,10 @@ setup_sam3() {
         mkdir -p /workspace/apps
     fi
     cp -r /app/sam3 /workspace/apps/
+    cp /app/requirements*.txt /workspace/apps/sam3
+    cd /workspace/apps/sam3
+    pip install --upgrade --no-cache-dir -r requirements.txt
+    pip install --upgrade --pre --no-cache-dir -r requirements--pre.txt
 }
 
 setup_supersvg() {
