@@ -64,6 +64,7 @@ RUN python3 -m venv /app/venv/apps
 RUN python3 -m venv /app/venv/bezier
 
 # Install Python packages
+RUN source /app/venv/apps/bin/activate
 RUN pip install --no-cache-dir \
     asyncio \
     requests \

@@ -54,14 +54,12 @@ setup_supersvg() {
     if [ ! -d "/workspace/apps/supersvg" ]; then
         git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     fi
+    cp -r /app/supersvg /workspace/apps/
     cd supersvg
     pip install --upgrade --no-cache-dir -r requirements.txt
-    cp -r /app/supersvg /workspace/apps/
     cd DiffVG
     git submodule update --init --recursive
-    if [[ $DO_INSTALL ]]; then
-        python setup.py install
-    fi
+    python setup.py install
 }
 
 setup_bezier() {
@@ -74,9 +72,9 @@ setup_bezier() {
     if [ ! -d "/workspace/apps/bezier" ]; then
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     fi
+    cp -r /app/bezier /workspace/apps/
     cd bezier
     pip install --upgrade --no-cache-dir -r requirements.txt
-    cp -r /app/bezier/server.py /workspace/apps/bezier/
 }
 
 start_sam3() {
