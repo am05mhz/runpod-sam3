@@ -68,7 +68,9 @@ setup_bezier() {
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
     fi
     cd bezier
-    git clone https://github.com/XingtongGe/gsplat.git
+    if [ ! -d "/workspace/apps/bezier/gsplat" ]; then
+        git clone https://github.com/XingtongGe/gsplat.git
+    fi
     cd gsplat
     pip install .[dev]
     cp -r /app/bezier/server.py /workspace/apps/bezier/
