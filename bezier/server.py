@@ -1095,4 +1095,4 @@ def regenerate_svg(job_id: str):
 if __name__ == "__main__":
     port = get_server_port()
     print(f"Starting server on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
