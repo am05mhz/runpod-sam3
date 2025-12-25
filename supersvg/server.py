@@ -1,10 +1,5 @@
 """
 Experimental version: SAM3 segmentation + SuperSVG vectorization
-FastAPI version (converted from Flask)
-
-Architecture unchanged:
-- SAM3 service runs on port 5002
-- This app runs on port 5001
 """
 
 import os
@@ -52,10 +47,13 @@ OUTPUT_FOLDER = os.path.join(BASE_DIR, "output")
 CHECKPOINT_PATH = os.path.join(BASE_DIR, "ckpts", "coarse-model.pt")
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp"}
-SAM3_SERVICE_URL = "http://127.0.0.1:5002"
+SAM3_SERVICE_URL = "http://127.0.0.1:8000"
 
 WIDTH = 224
-BATCH_SIZE = 64
+N_SEGMENTS = 1500  # Default segment count
+N_SEGMENTS_HIGH = 5000  # High quality
+N_SEGMENTS_BEST = 10000  # Best quality - finest detail
+BATCH_SIZE = 64  # Batch size for GPU inference
 
 QUALITY_SETTINGS = {
     "low": 500,
@@ -216,7 +214,7 @@ def optimize_svg_precision(svg_path, decimals=2):
 #
 # 👉 Paste them EXACTLY as-is from your original file.
 # ------------------------------------------------------------------------------
-def generate_sam3_masks_via_service(image_pil, use_ollama=True, conf_thresh=0.3, num_rounds=1):
+def generate_sam3_masks_via_service(image_pil, use_ollama=True, use_labels=None, conf_thresh=0.3, num_rounds=1):
     """
     Generate automatic segmentation masks using SAM3 service.
     Calls the SAM3 service running in a separate environment.
@@ -238,7 +236,7 @@ def generate_sam3_masks_via_service(image_pil, use_ollama=True, conf_thresh=0.3,
     # Check service health
     health = check_sam3_service()
     if health is None:
-        raise RuntimeError("SAM3 service not available. Make sure it's running on port 5002.")
+        raise RuntimeError("SAM3 service not available. Make sure it's running on port 8000.")
 
     # Only pre-load SAM3 if NOT using Ollama
     # When using Ollama, the /auto_segment endpoint manages model loading internally
@@ -251,7 +249,20 @@ def generate_sam3_masks_via_service(image_pil, use_ollama=True, conf_thresh=0.3,
     image_b64 = image_to_base64(image_pil)
 
     try:
-        if use_ollama:
+        if use_labels:
+            # Use predefined labels
+            print("Calling SAM3 service with text query...")
+            response = requests.post(
+                f"{SAM3_SERVICE_URL}/segment_text",
+                json={
+                    'image': image_b64,
+                    'queries': use_labels,
+                    'conf_thresh': conf_thresh
+                },
+                timeout=300
+            )
+
+        elif use_ollama:
             # Use Ollama + SAM3 auto-segmentation
             print(f"Calling SAM3 service with Ollama auto-detection (rounds={num_rounds})...")
             response = requests.post(
@@ -808,8 +819,116 @@ def filter_shapes_in_black_region(shapes, groups, non_black_mask, threshold_rati
 
     return filtered_shapes, filtered_groups
 
+def process_segments_batched(model, image_np, segments, pass_name="Pass"):
+    """Process segments in batches for GPU efficiency.
 
-def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=True, conf_thresh=0.3, num_rounds=1, quality='default'):
+    Returns list of (shapes, groups) tuples.
+    """
+    resize_to_model = transforms.Resize((WIDTH, WIDTH))
+    to_tensor = transforms.ToTensor()
+    num_control_points = [2] * model.path_num
+
+    num_segments = segments.max() + 1
+    shapes = []
+    groups = []
+    shape_id = 0
+
+    # Pre-compute segment metadata
+    print(f"{pass_name}: Preparing {num_segments} segments...")
+    segment_data = []
+    for seg_idx in range(num_segments):
+        seg_mask_full = (segments == seg_idx)
+        if not seg_mask_full.any():
+            continue
+
+        rows = np.any(seg_mask_full, axis=1)
+        cols = np.any(seg_mask_full, axis=0)
+        y1, y2 = np.where(rows)[0][[0, -1]]
+        x1, x2 = np.where(cols)[0][[0, -1]]
+
+        crop_h, crop_w = y2 - y1 + 1, x2 - x1 + 1
+        if crop_h < 4 or crop_w < 4:
+            continue
+
+        segment_data.append({
+            'x1': x1, 'y1': y1,
+            'crop_w': crop_w, 'crop_h': crop_h,
+            'crop_img': image_np[y1:y2+1, x1:x2+1],
+            'crop_mask': seg_mask_full[y1:y2+1, x1:x2+1].astype(np.float32)
+        })
+
+    total_segments = len(segment_data)
+    print(f"{pass_name}: Processing {total_segments} valid segments in batches of {BATCH_SIZE}...")
+
+    # Process in batches
+    for batch_start in range(0, total_segments, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, total_segments)
+        batch_data = segment_data[batch_start:batch_end]
+
+        if batch_start % (BATCH_SIZE * 4) == 0:
+            print(f"  {pass_name}: {batch_start}/{total_segments}")
+
+        # Prepare batch tensors
+        batch_inputs = []
+        for seg in batch_data:
+            crop_img_tensor = to_tensor(seg['crop_img'].astype(np.float32))
+            crop_mask_tensor = torch.from_numpy(seg['crop_mask']).unsqueeze(0)
+
+            crop_img_tensor = resize_to_model(crop_img_tensor)
+            crop_mask_tensor = resize_to_model(crop_mask_tensor)
+
+            crop_mask_tensor_bin = (crop_mask_tensor > 0.5).float()
+            masked_input = crop_img_tensor * crop_mask_tensor_bin - (1 - crop_mask_tensor_bin)
+            batch_inputs.append(masked_input)
+
+        # Stack and move to GPU once for the whole batch
+        batch_tensor = torch.stack(batch_inputs).to(device)
+
+        # Run batch inference
+        with torch.no_grad():
+            strokes_batch = model.encoder(batch_tensor)
+
+        # Process results back on CPU
+        strokes_batch_cpu = strokes_batch.detach().cpu()
+
+        for i, seg in enumerate(batch_data):
+            strokes_cpu = strokes_batch_cpu[i]
+            x1, y1 = seg['x1'], seg['y1']
+            crop_w, crop_h = seg['crop_w'], seg['crop_h']
+
+            for stroke_idx in range(strokes_cpu.size(0)):
+                stroke = strokes_cpu[stroke_idx]
+                visibility = float(stroke[-1].item())
+                if visibility < 0.5:
+                    continue
+
+                points = stroke[:24].reshape(-1, 2).numpy().copy()
+                points[:, 0] = points[:, 0] * crop_w + x1
+                points[:, 1] = points[:, 1] * crop_h + y1
+
+                rgb = np.clip(stroke[24:27].numpy(), 0.0, 1.0)
+                rgba = np.array([rgb[0], rgb[1], rgb[2], 1.0], dtype=np.float32)
+
+                shapes.append(
+                    pydiffvg.Path(
+                        num_control_points=torch.LongTensor(num_control_points),
+                        points=torch.from_numpy(points).float(),
+                        stroke_width=torch.tensor(0.0),
+                        is_closed=True
+                    )
+                )
+                groups.append(
+                    pydiffvg.ShapeGroup(
+                        shape_ids=torch.LongTensor([shape_id]),
+                        fill_color=torch.from_numpy(rgba).float()
+                    )
+                )
+                shape_id += 1
+
+    print(f"{pass_name} complete: {shape_id} shapes generated")
+    return shapes, groups
+
+def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=True, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
     """
     Process an image using SAM3 segmentation + SuperSVG vectorization.
 
@@ -856,6 +975,7 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     masks, labels = generate_sam3_masks_via_service(
         image_pil,
         use_ollama=use_ollama,
+        use_labels=use_labels,
         conf_thresh=conf_thresh,
         num_rounds=num_rounds
     )
@@ -942,6 +1062,130 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     for layer in layers:
         print(f"  - {layer['label']}: {layer['count']} shapes")
 
+def process_image(image_path, output_svg_path, output_png_path, max_dim=4096, n_segments=N_SEGMENTS):
+    """Process an image by segmenting into superpixels and vectorizing each.
+
+    Uses a three-pass approach with batched GPU inference for speed:
+    - Pass 1: Normal superpixel vectorization
+    - Pass 2: Shifted grid to fill boundary gaps
+    - Pass 3: Another shift pattern for remaining gaps
+    """
+    model = load_supersvg_model()
+
+    # Load image
+    image_pil = Image.open(image_path).convert('RGB')
+    orig_w, orig_h = image_pil.size
+
+    # Resize while preserving aspect ratio
+    scale = max_dim / max(orig_w, orig_h)
+    if scale > 1:
+        scale = 1  # Don't upscale
+    output_w = int(orig_w * scale)
+    output_h = int(orig_h * scale)
+
+    image_pil = image_pil.resize((output_w, output_h), Image.LANCZOS)
+    image_np = np.array(image_pil) / 255.0
+
+    # Detect and mask black regions - set them to transparent (zeros)
+    # This way model won't produce meaningful shapes for black areas
+    non_black_mask = mask_black_regions(image_np, threshold=0.08)
+    black_ratio = 1.0 - (np.sum(non_black_mask) / non_black_mask.size)
+    print(f"Black region: {black_ratio*100:.1f}% of image")
+
+    # Apply mask - black regions become all zeros (transparent)
+    image_np_masked = image_np.copy()
+    image_np_masked[~non_black_mask] = 0.0
+
+    # === PASS 1: Normal superpixel vectorization ===
+    # Use original image for SLIC segmentation, masked image for model inference
+    segments1 = slic(
+        image_np,
+        n_segments=n_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    pass1_shapes, pass1_groups = process_segments_batched(model, image_np_masked, segments1, "Pass 1")
+
+    # Calculate shift based on superpixel size
+    avg_superpixel_size = int(np.sqrt((output_w * output_h) / n_segments))
+
+    # === PASS 2: Shifted grid to fill boundary gaps ===
+    SHIFT_X = max(avg_superpixel_size // 2, 10)
+    SHIFT_Y = max(avg_superpixel_size // 2, 10)
+
+    image_padded = np.pad(image_np, ((SHIFT_Y, 0), (SHIFT_X, 0), (0, 0)), mode='edge')
+    segments2_padded = slic(
+        image_padded,
+        n_segments=n_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    segments2 = segments2_padded[SHIFT_Y:, SHIFT_X:]
+    pass2_shapes, pass2_groups = process_segments_batched(model, image_np_masked, segments2, "Pass 2")
+
+    # === PASS 3: Another shifted grid to catch remaining gaps ===
+    SHIFT3_X = max(avg_superpixel_size // 3, 7)
+    SHIFT3_Y = max(avg_superpixel_size // 3, 7)
+
+    image_padded3 = np.pad(image_np, ((0, SHIFT3_Y), (0, SHIFT3_X), (0, 0)), mode='edge')
+    segments3_padded = slic(
+        image_padded3,
+        n_segments=n_segments,
+        sigma=1,
+        compactness=30,
+        start_label=0,
+    )
+    segments3 = segments3_padded[:output_h, :output_w]
+    pass3_shapes, pass3_groups = process_segments_batched(model, image_np_masked, segments3, "Pass 3")
+
+    # Create background rectangle (layer 0) - black background to fill any gaps
+    bg_points = np.array([[0, 0], [output_w, 0], [output_w, output_h], [0, output_h]], dtype=np.float32)
+    bg_shape = pydiffvg.Path(
+        num_control_points=torch.LongTensor([0, 0, 0, 0]),
+        points=torch.from_numpy(bg_points).float(),
+        stroke_width=torch.tensor(0.0),
+        is_closed=True
+    )
+    bg_group = pydiffvg.ShapeGroup(
+        shape_ids=torch.LongTensor([0]),
+        fill_color=torch.tensor([0.0, 0.0, 0.0, 1.0])  # Black background
+    )
+
+    # Merge: Background first, then Pass3, Pass2, Pass1 on top
+    all_content_shapes = pass3_shapes + pass2_shapes + pass1_shapes
+    all_content_groups = pass3_groups + pass2_groups + pass1_groups
+
+    # === Optimize by removing shapes in black regions ===
+    if black_ratio > 0.10:  # Only if significant black area exists
+        total_before = len(all_content_shapes)
+        filtered_shapes, filtered_groups = filter_shapes_in_black_region(
+            all_content_shapes, all_content_groups, non_black_mask, threshold_ratio=0.95
+        )
+        total_after = len(filtered_shapes)
+        print(f"Optimized: {total_before} -> {total_after} shapes ({total_before - total_after} removed)")
+
+        output_shapes = [bg_shape] + filtered_shapes
+        output_groups = [bg_group] + filtered_groups
+    else:
+        # No significant black area, use all shapes
+        output_shapes = [bg_shape] + all_content_shapes
+        output_groups = [bg_group] + all_content_groups
+
+    # Save SVG output
+    if output_shapes:
+        pydiffvg.save_svg(output_svg_path, output_w, output_h, output_shapes, reindex_groups(output_groups))
+    else:
+        with open(output_svg_path, 'w') as f:
+            f.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="{output_w}" height="{output_h}"></svg>')
+
+    # Post-process SVG to reduce file size (2 decimal precision)
+    optimize_svg_precision(output_svg_path, decimals=2)
+
+    # Render PNG from SVG using CairoSVG
+    svg_to_png(output_svg_path, output_png_path)
+
 # ==============================================================================
 # FastAPI ROUTES (converted from Flask)
 # ==============================================================================
@@ -967,6 +1211,8 @@ async def upload_file(
     conf_thresh: float = Form(0.3),
     num_rounds: int = Form(1),
     quality: str = Form("default"),
+    mode: Optional[str] = Form("layered"),
+    labels: Optional[str] = Form(None),
 ):
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Invalid file type")
@@ -985,35 +1231,59 @@ async def upload_file(
         f.write(await file.read())
 
     try:
-        process_image_sam3(
-            input_path,
-            svg_path,
-            png_path,
-            use_ollama=use_ollama,
-            conf_thresh=conf_thresh,
-            num_rounds=num_rounds,
-            quality=quality,
-        )
+        match mode:
+            case "layered":
+                process_image_sam3(
+                    input_path,
+                    svg_path,
+                    png_path,
+                    use_ollama=use_ollama,
+                    use_labels=labels,
+                    conf_thresh=conf_thresh,
+                    num_rounds=num_rounds,
+                    quality=quality,
+                )
+
+            case "simple":
+                if quality == 'best':
+                    segments = N_SEGMENTS_BEST
+                elif quality == 'high':
+                    segments = N_SEGMENTS_HIGH
+                else:
+                    segments = N_SEGMENTS
+                process_image(input_path, svg_path, png_path, n_segments=segments)
+
+            case _:
+                raise HTTPException(status_code=404, "invalid parameter")
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     return {
         "success": True,
-        "svg_url": f"{os.path.basename(svg_path)}",
-        "png_url": f"{os.path.basename(png_path)}",
+        "svg_url": f"/output/{os.path.basename(svg_path)}",
+        "png_url": f"/output/{os.path.basename(png_path)}",
+        'svg_filename': os.path.basename(svg_path),
+        'png_filename': os.path.basename(png_path),
     }
 
 
 @app.get("/output/{filename}")
 async def serve_output(filename: str):
     path = os.path.join(OUTPUT_FOLDER, filename)
-    return FileResponse(path)
+    if os.path.exists(path):
+        return FileResponse(path)
+    else:
+        raise HTTPException(status_code=404, detail="Media file not found")
 
 
 @app.get("/download/{filename}")
 async def download_file(filename: str):
     path = os.path.join(OUTPUT_FOLDER, filename)
-    return FileResponse(path, filename=filename)
+    if os.path.exists(path):
+        return FileResponse(path, filename=filename)
+    else:
+        raise HTTPException(status_code=404, detail="Media file not found")
 
 # ------------------------------------------------------------------------------
 # CLI / Server entrypoint
@@ -1025,6 +1295,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=OUTPUT_FOLDER)
     parser.add_argument("--max-dim", type=int, default=4096)
     parser.add_argument("--no-ollama", action="store_true")
+    parser.add_argument("--labels", type=str | None, default=None)
     parser.add_argument("--conf-thresh", type=float, default=0.3)
     parser.add_argument("--num-rounds", type=int, default=1)
     parser.add_argument("--host", type=str, default="0.0.0.0")
@@ -1043,6 +1314,7 @@ if __name__ == "__main__":
             png_out,
             max_dim=args.max_dim,
             use_ollama=not args.no_ollama,
+            use_labels=args.labels,
             conf_thresh=args.conf_thresh,
             num_rounds=args.num_rounds,
         )

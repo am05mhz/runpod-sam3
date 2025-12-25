@@ -189,7 +189,7 @@ async def run_sam_inference(
     min_area: int = 0,
     threshold: float = 0.5,
     for_svg: bool = False,
-) -> list[dict]:
+):
     """
     Async SAM3 inference using Hugging Face transformers SAM3 model.
     Supports:
@@ -203,7 +203,9 @@ async def run_sam_inference(
             # Convert numpy -> PIL
             pil_img = Image.fromarray(image)
 
-            if prompt is not None:
+            print("forsvg", for_svg)
+
+            if for_svg or prompt is not None or (box is None and points is None):
                 # Build inputs for processor
                 # boxes and labels must be lists for HF API
                 hf_inputs = hf_sam3_processor(
@@ -227,19 +229,11 @@ async def run_sam_inference(
 
                 if for_svg:
                     raw_masks = results['masks'].cpu().numpy()
-                    raw_scores = results['scores'].cpu().numpy().tolist()
-
-                    if len(raw_masks) > 0:
-                        masks_array = raw_masks.astype(np.uint8)
-                    else:
-                        masks_array = np.array([])
-
-                    masks_b64 = masks_to_base64(masks_array)
+                    raw_scores = results['scores'].cpu().numpy()
 
                     return {
-                        'masks': masks_b64,
-                        'num_masks': len(raw_masks),
-                        'scores': raw_scores
+                        'raw_masks': raw_masks,
+                        'raw_scores': raw_scores,
                     }
 
             else:
@@ -387,6 +381,7 @@ class TextPrompt(BaseModel):
     image: str | None = None
     image_url: str | None = None
     query: str | None = None
+    queries: str | None = None
     conf_thresh: float = 0.8
 
 @app.post("/segment_text")
@@ -416,17 +411,45 @@ async def segment_text_endpoint(prompt: TextPrompt):
 
     img_np = np.array(pil_img)
 
-    original_h, original_w = img_np.shape[:2]
+    objs = prompt.queries.split(',') if prompt.queries is not None else [] 
+    if prompt.query is not None:
+        objs.append(prompt.query)
+
+    if len(objs) == 0:
+        objs.append("objects")
+
+    all_masks = []
+    all_scores = []
+    all_labels = []
 
     # async SAM3 inference
-    sam_outputs = await run_sam_inference(
-        image=img_np,
-        prompt=prompt.query,
-        threshold=prompt.conf_thresh,
-        for_svg=True,
-    )
+    for obj_name in objs:
+        outs = await run_sam_inference(
+            image=img_np,
+            prompt=obj_name,
+            threshold=prompt.conf_thresh,
+            for_svg=True,
+        )
+        raw_masks = outs["raw_masks"]
+        raw_scores = outs["raw_scores"]
 
-    return {"masks": sam_outputs["masks"], "num_masks": sam_outputs["num_masks"], "scores": sam_outputs["scores"]}
+        for idx, mask in enumerate(raw_masks):
+            score = float(raw_scores[idx])
+            if score >= conf_thresh:
+                all_masks.append(mask.astype(np.uint8))
+                all_scores.append(score)
+                all_labels.append(obj_name)
+
+        print(f"  {obj_name}: {len(raw_masks)} masks")
+
+    print(f"\nTotal masks: {len(all_masks)}")
+    if len(all_masks) > 0:
+        masks_array = np.stack(all_masks, axis=0)
+    else:
+        masks_array = np.array([])
+
+    masks_b64 = masks_to_base64(masks_array)
+    return {"masks": masks_b64, "num_masks": len(all_masks), "scores": all_scores, "labels": all_labels, "detected_objects": objs}
 
 
 # -----------------------
