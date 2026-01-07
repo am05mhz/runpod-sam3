@@ -196,7 +196,7 @@ def generate_svg_interpolated_fill(gaussian_model, svg_path, canvas_width, canva
         sorted_indices = torch.arange(num_curves)
 
     # Verify sorted_indices are valid
-    if sorted_indices.max() >= num_curves:
+    if sorted_indices.numel() > 0 and sorted_indices.max() >= num_curves:
         sorted_indices = torch.arange(num_curves)
 
     # Create SVG
@@ -423,7 +423,7 @@ def generate_svg_polygons(gaussian_model, svg_path, canvas_width, canvas_height,
         sorted_indices = torch.arange(num_curves)
 
     # Verify sorted_indices are valid
-    if sorted_indices.max() >= num_curves:
+    if sorted_indices.numel() > 0 and sorted_indices.max() >= num_curves:
         sorted_indices = torch.arange(num_curves)
 
     # Create SVG
