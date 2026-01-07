@@ -1254,7 +1254,7 @@ async def upload_file(
                 process_image(input_path, svg_path, png_path, n_segments=segments)
 
             case _:
-                raise HTTPException(status_code=404, "invalid parameter")
+                raise HTTPException(status_code=404, detail="invalid parameter")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
