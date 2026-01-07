@@ -1295,7 +1295,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default=OUTPUT_FOLDER)
     parser.add_argument("--max-dim", type=int, default=4096)
     parser.add_argument("--no-ollama", action="store_true")
-    parser.add_argument("--labels", type=str | None, default=None)
+    parser.add_argument("--labels", type=str, default=None)
     parser.add_argument("--conf-thresh", type=float, default=0.3)
     parser.add_argument("--num-rounds", type=int, default=1)
     parser.add_argument("--host", type=str, default="0.0.0.0")
