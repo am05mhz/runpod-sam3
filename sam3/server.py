@@ -458,4 +458,4 @@ async def segment_text_endpoint(prompt: TextPrompt):
 if __name__ == "__main__":
     port = get_server_port()
     print(f"Starting server on port {port}")
-    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=port)

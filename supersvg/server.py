@@ -1325,4 +1325,4 @@ if __name__ == "__main__":
         print(f"SAM3 service: {SAM3_SERVICE_URL}")
         print(f"Device: {device}")
 
-        uvicorn.run("server:app", host=args.host, port=args.port, reload=True)
+        uvicorn.run(app, host=args.host, port=args.port)
