@@ -22,10 +22,10 @@ start_nginx() {
 
 # Setup ssh
 setup_ssh() {
-    if [[ $PUBLIC_KEY ]]; then
+    if [[ $SSH_KEY ]]; then
         echo "Setting up SSH..."
         mkdir -p ~/.ssh
-        echo "$PUBLIC_KEY" >> ~/.ssh/authorized_keys
+        echo "$SSH_KEY" >> ~/.ssh/authorized_keys
         chmod 700 -R ~/.ssh
         # Generate SSH host keys if not present
         generate_ssh_keys
@@ -64,6 +64,27 @@ setup_supersvg() {
     cd supersvg
     pip install --upgrade --no-cache-dir -r requirements.txt
     cd DiffVG
+    git submodule update --init --recursive
+    python setup.py install
+}
+
+setup_layeredsvg() {
+    echo "installing layeredsvg..."
+    source /app/venv/apps/bin/activate
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
+    fi
+    cd /workspace/apps
+    if [ ! -d "/workspace/apps/layeredsvg" ]; then
+        mkdir -p /workspace/apps/layeredsvg
+        cd /workspace/apps/layeredsvg
+        git clone https://github.com/SZUVIZ/layered_vectorization.git
+    fi
+    cp -r /app/layeredsvg /workspace/apps/
+    cd /workspace/apps/layeredsvg/layered_vectorization
+    pip install --upgrade --no-cache-dir -r requirements.txt
+    git clone https://github.com/BachiLi/diffvg.git
+    cd diffvg
     git submodule update --init --recursive
     python setup.py install
 }
