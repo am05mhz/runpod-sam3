@@ -23,7 +23,10 @@ start_nginx() {
 # Setup ssh
 setup_ssh() {
     if [[ $SSH_KEY ]]; then
+        echo ""
+        echo "========================================================"
         echo "Setting up SSH..."
+        echo "========================================================"
         mkdir -p ~/.ssh
         echo "$SSH_KEY" >> ~/.ssh/authorized_keys
         chmod 700 -R ~/.ssh
@@ -38,7 +41,10 @@ setup_ssh() {
 }
 
 setup_sam3() {
+    echo ""
+    echo "========================================================"
     echo "installing sam3..."
+    echo "========================================================"
     source /app/venv/apps/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
@@ -51,7 +57,10 @@ setup_sam3() {
 }
 
 setup_supersvg() {
+    echo ""
+    echo "========================================================"
     echo "installing supersvg..."
+    echo "========================================================"
     source /app/venv/apps/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
@@ -69,7 +78,10 @@ setup_supersvg() {
 }
 
 setup_layeredsvg() {
+    echo ""
+    echo "========================================================"
     echo "installing layeredsvg..."
+    echo "========================================================"
     source /app/venv/apps/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
@@ -90,7 +102,10 @@ setup_layeredsvg() {
 }
 
 setup_bezier() {
+    echo ""
+    echo "========================================================"
     echo "installing bezier splatting..."
+    echo "========================================================"
     source /app/venv/bezier/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
@@ -114,7 +129,10 @@ setup_bezier() {
 }
 
 start_sam3() {
+    echo ""
+    echo "========================================================"
     echo "starting sam3..."
+    echo "========================================================"
     source /app/venv/apps/bin/activate
     cd /workspace/apps/sam3
     nohup python server.py --port=$SAM3_PORT > /proc/self/fd/1 2>&1 &
@@ -122,7 +140,10 @@ start_sam3() {
 
 start_supersvg() {
     if [[ $START_SUPERSVG ]]; then
+        echo ""
+        echo "========================================================"
         echo "starting supersvg..."
+        echo "========================================================"
         source /app/venv/apps/bin/activate
         cd /workspace/apps/supersvg
         nohup python server.py --port=$SUPERSVG_PORT > /proc/self/fd/1 2>&1 &
@@ -133,6 +154,8 @@ start_supersvg() {
 
 start_bezier() {
     if [[ $START_BEZIER ]]; then
+        echo ""
+        echo "========================================================"
         echo "starting bezier splatting..."
         source /app/venv/bezier/bin/activate
         cd /workspace/apps/bezier
@@ -143,13 +166,15 @@ start_bezier() {
 }
 
 setup_vllm() {
+    echo ""
+    echo "========================================================"
     echo "setup vllm..."
     if [[ $USE_VLLM ]]; then
         pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
         echo "starting vllm..."
         vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.55 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
     else
-        echo "not vllm"
+        echo "not setup vllm"
     fi
 }
 
