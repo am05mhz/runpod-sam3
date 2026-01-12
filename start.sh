@@ -32,6 +32,8 @@ setup_ssh() {
         service ssh start
         echo "SSH host keys:"
         cat /etc/ssh/*.pub
+    else
+        echo "SSH public key not setup"
     fi
 }
 
@@ -103,6 +105,8 @@ start_supersvg() {
         source /app/venv/apps/bin/activate
         cd /workspace/apps/supersvg
         nohup python server.py --port=$SUPERSVG_PORT > /proc/self/fd/1 2>&1 &
+    else
+        echo "not starting supersvg"
     fi
 }
 
@@ -112,6 +116,8 @@ start_bezier() {
         source /app/venv/bezier/bin/activate
         cd /workspace/apps/bezier
         nohup python server.py --port=$BEZIER_PORT > /proc/self/fd/1 2>&1 &
+    else
+        echo "not starting bezier splat"
     fi
 }
 
@@ -121,6 +127,8 @@ setup_vllm() {
         pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
         echo "starting vllm..."
         vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.55 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+    else
+        echo "not vllm"
     fi
 }
 
@@ -146,7 +154,7 @@ call_python_handler() {
 #                               Main Program                                   #
 # ---------------------------------------------------------------------------- #
 
-start_nginx
+# start_nginx
 
 echo "Pod Started"
 
