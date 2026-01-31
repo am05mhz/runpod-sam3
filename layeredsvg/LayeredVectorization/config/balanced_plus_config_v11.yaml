@@ -1,0 +1,86 @@
+# Balanced+ Quality SDXL Vectorization Config (1024x1024)
+# Between Balanced and Medium - slight quality boost over balanced
+# For use with app11.py
+
+simp_img_seq_indexs: [80, 60, 40, 20, 0]
+is_save_all_simp_img_seq: True
+is_save_masks: True
+multiple: 1
+
+# Between balanced (3) and medium (2.75)
+approxpolydp_epsilon: 2.875
+
+color_fitting_type: "dominan" # "dominan" or "mse"
+
+# Same as balanced (8)
+add_visual_path_num_iters: 8
+
+# Between balanced (512) and medium (640)
+max_path_num_limit: 576
+
+paths_merge_color_threshold: 0.1
+paths_merge_distance_threshold: 3
+paths_remove_visual_threshold: 7.0
+
+# Perform kmeans clustering on target images to reduce color categories
+is_cluster_target_img: True
+# Between balanced (120) and medium (135)
+kmeas_k: 128
+
+sam:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # Between balanced (32) and medium (34)
+  points_per_side: 33
+  pred_iou_thresh: 0.86
+  stability_score_thresh: 0.86
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 2
+  # Between balanced (100) and medium (90)
+  min_mask_region_area: 95
+  box_nms_thresh: 0.7
+
+# Per-layer SAM for internal structure detection
+sam_internal:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # Between balanced (56) and medium (58)
+  points_per_side: 57
+  pred_iou_thresh: 0.78
+  stability_score_thresh: 0.76
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 1
+  min_mask_region_area: 20
+  box_nms_thresh: 0.54
+
+train:
+  is_train_stroke: False
+  is_train_visual_color: True
+  is_train_struct_color: True
+  # Between balanced (100) and medium (125)
+  struct_opt_num_iters: 112
+  # Between balanced (200) and medium (225)
+  visual_opt_num_iters: 212
+
+# Bezier Splatting parameters
+bs:
+  bezier_degree: 4
+  num_samples: 64
+  # Between balanced (6000) and medium (6500)
+  iterations: 6250
+  mode: "closed"
+  lr: 0.01
+  min_curves: 576
+
+# COVec parameters
+covec:
+  warmup_epochs: 72
+  joint_epochs: 72
+  max_path_rounds: 5
+  refine_iters: 122
+
+base_lr:
+  point: 1
+  color: 0.01
+  stroke_width: 0.1
+  stroke_color: 0.01

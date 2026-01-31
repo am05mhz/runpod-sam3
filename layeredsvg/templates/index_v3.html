@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layered Image Vectorization - SDXL (1024x1024)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Layered Image Vectorization</h1>
+            <p>SDXL Version (1024x1024) - Higher resolution processing with aspect ratio preservation</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-zone-content">
+                        <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p class="drop-zone-text">Drag and drop an image here</p>
+                        <p class="drop-zone-subtext">or</p>
+                        <button type="button" id="browse-btn" class="btn btn-primary">Browse Files</button>
+                        <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" hidden>
+                        <p class="file-info">Supported formats: PNG, JPG (max 16MB) - Processed at 1024x1024</p>
+                    </div>
+                    <div id="preview-container" class="preview-container" style="display: none;">
+                        <img id="preview-image" src="" alt="Preview">
+                        <button type="button" id="remove-btn" class="btn-remove">Remove</button>
+                    </div>
+                </div>
+
+                <div id="process-section" class="process-section" style="display: none;">
+                    <div class="quality-selector">
+                        <label for="quality-select">Quality Preset (SDXL 1024x1024):</label>
+                        <select id="quality-select" class="quality-select">
+                            <option value="fast" selected>Fast</option>
+                            <option value="balanced">Balanced</option>
+                            <option value="high">High Quality</option>
+                            <option value="best">Best Quality</option>
+                            <option value="ultra">Ultra-Detail</option>
+                            <option value="extreme">Extreme-Detail (20GB+ GPU)</option>
+                            <option value="max">Max-Detail (24GB+ GPU)</option>
+                        </select>
+                        <p class="quality-info" id="quality-info">SDXL Fast - 256 paths, 80 colors (~5 min)</p>
+                    </div>
+                    <button type="button" id="process-btn" class="btn btn-success">Start Vectorization</button>
+                </div>
+            </div>
+
+            <div id="progress-section" class="progress-section" style="display: none;">
+                <div class="progress-container">
+                    <div class="progress-header">
+                        <h3>Processing (SDXL 1024x1024)</h3>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="progress-message" class="progress-message">Starting...</p>
+                </div>
+            </div>
+
+            <div id="result-section" class="result-section" style="display: none;">
+                <h2>Results</h2>
+                <div class="result-container">
+                    <div class="result-card">
+                        <h3>Final SVG</h3>
+                        <div id="svg-preview" class="svg-preview"></div>
+                        <button type="button" id="view-details-btn" class="btn btn-primary">View Details</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="history-section">
+                <h2>Recent Conversions</h2>
+                <div id="history-list" class="history-list">
+                    <p class="loading">Loading...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main_v3.js') }}"></script>
+</body>
+</html>

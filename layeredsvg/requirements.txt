@@ -1,0 +1,10 @@
+torch
+torchvision
+torchaudio
+numpy
+opencv-python
+segment-anything==1.0
+diffusers
+huggingface-hub
+transformers
+accelerate

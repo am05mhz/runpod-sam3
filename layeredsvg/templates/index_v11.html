@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V11 Layered Vectorization - Editable Layers</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Layered Image Vectorization V11</h1>
+            <p>App3 SVG Quality + App8 Layer Editability - Each layer can be moved independently</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <div id="drop-zone" class="drop-zone">
+                    <div class="drop-zone-content">
+                        <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p class="drop-zone-text">Drag and drop an image here</p>
+                        <p class="drop-zone-subtext">or</p>
+                        <button type="button" id="browse-btn" class="btn btn-primary">Browse Files</button>
+                        <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" hidden>
+                        <p class="file-info">Supported formats: PNG, JPG (max 16MB)</p>
+                    </div>
+                    <div id="preview-container" class="preview-container" style="display: none;">
+                        <img id="preview-image" src="" alt="Preview">
+                        <button type="button" id="remove-btn" class="btn-remove">Remove</button>
+                    </div>
+                </div>
+
+                <div id="process-section" class="process-section" style="display: none;">
+                    <div class="quality-selector">
+                        <label for="quality-select">Quality Preset:</label>
+                        <select id="quality-select" class="quality-select">
+                            <option value="fast" selected>Fast (~5 min)</option>
+                            <option value="balanced">Balanced (~10 min)</option>
+                            <option value="high">High Quality (~20 min)</option>
+                            <option value="best">Best Quality (~40 min)</option>
+                        </select>
+                        <p class="quality-info" id="quality-info">Fast - 256 paths/layer, quick processing</p>
+                    </div>
+
+                    <div class="layer-options">
+                        <h4>Layer Decomposition Settings</h4>
+                        <div class="option-group">
+                            <label for="max-layers">Max Layers:</label>
+                            <input type="number" id="max-layers" value="10" min="2" max="30" class="option-input">
+                            <span class="option-hint">Limit layers for faster processing</span>
+                        </div>
+                        <div class="option-group">
+                            <label for="depth-clusters">Depth Clusters:</label>
+                            <select id="depth-clusters" class="option-input">
+                                <option value="2">2 (Foreground/Background)</option>
+                                <option value="3" selected>3 (Near/Mid/Far)</option>
+                                <option value="4">4 (Detailed depth)</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label for="background-method">Background Detection:</label>
+                            <select id="background-method" class="option-input">
+                                <option value="depth" selected>Depth (furthest from camera)</option>
+                                <option value="area">Area (Largest mask)</option>
+                            </select>
+                            <span class="option-hint">How to identify the background layer</span>
+                        </div>
+                    </div>
+
+                    <button type="button" id="process-btn" class="btn btn-success">Start Layered Vectorization</button>
+                </div>
+            </div>
+
+            <div id="progress-section" class="progress-section" style="display: none;">
+                <div class="progress-container">
+                    <div class="progress-header">
+                        <h3>Processing Layers</h3>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="progress-message" class="progress-message">Starting...</p>
+                    <p id="time-estimate" class="time-estimate"></p>
+                </div>
+            </div>
+
+            <div id="result-section" class="result-section" style="display: none;">
+                <h2>Results</h2>
+                <div class="result-summary" id="result-summary"></div>
+                <div class="result-container">
+                    <div class="result-card">
+                        <h3>Final SVG (Editable Layers)</h3>
+                        <div id="svg-preview" class="svg-preview"></div>
+                        <button type="button" id="view-details-btn" class="btn btn-primary">View All Layers</button>
+                        <button type="button" id="download-svg-btn" class="btn btn-secondary">Download SVG</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="history-section">
+                <h2>Recent Conversions</h2>
+                <div id="history-list" class="history-list">
+                    <p class="loading">Loading...</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main_v11.js') }}"></script>
+</body>
+</html>

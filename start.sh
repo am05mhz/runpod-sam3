@@ -88,17 +88,20 @@ setup_layeredsvg() {
     fi
     cd /workspace/apps
     if [ ! -d "/workspace/apps/layeredsvg" ]; then
-        mkdir -p /workspace/apps/layeredsvg
-        cd /workspace/apps/layeredsvg
-        git clone https://github.com/SZUVIZ/layered_vectorization.git
+        git clone https://github.com/SZUVIZ/layered_vectorization.git layeredsvg
     fi
-    cp -r /app/layeredsvg /workspace/apps/
-    cd /workspace/apps/layeredsvg/layered_vectorization
-    pip install --upgrade --no-cache-dir -r requirements.txt
+    cd /workspace/apps/layeredsvg
+    git clone https://github.com/linyq2117/SAMRefiner.git
     git clone https://github.com/BachiLi/diffvg.git
     cd diffvg
     git submodule update --init --recursive
     python setup.py install
+    cp -r /app/layeredsvg /workspace/apps/
+    cd /workspace/apps/layeredsvg
+    pip install --upgrade --no-cache-dir -r requirements.txt
+    mkdir checkpoints
+    cd checkpoints
+    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 }
 
 setup_bezier() {

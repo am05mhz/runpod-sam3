@@ -1,0 +1,86 @@
+# Best Quality SDXL Vectorization Config (1024x1024)
+# Maximum quality output - closest to cluster_img.png
+# For use with app3.py only
+
+simp_img_seq_indexs: [80, 60, 40, 20, 0]
+is_save_all_simp_img_seq: True
+is_save_masks: True
+multiple: 1
+
+# Lowest epsilon = most detailed path curves
+approxpolydp_epsilon: 2
+
+color_fitting_type: "dominan" # "dominan" or "mse"
+
+# Maximum visual refinement iterations
+add_visual_path_num_iters: 12
+
+# Maximum paths for best detail
+max_path_num_limit: 1024
+
+paths_merge_color_threshold: 0.1
+paths_merge_distance_threshold: 3
+paths_remove_visual_threshold: 7.0
+
+# Perform kmeans clustering on target images to reduce color categories
+is_cluster_target_img: True
+# Maximum color clusters for richest palette
+kmeas_k: 180
+
+sam:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # SDXL-optimized SAM settings (1024x1024)
+  points_per_side: 40  # More points for detail, but not excessive
+  pred_iou_thresh: 0.85  # Slightly more permissive
+  stability_score_thresh: 0.84
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 2
+  min_mask_region_area: 64  # Catch smaller elements
+  box_nms_thresh: 0.7
+
+# Per-layer SAM for internal structure detection (BEST QUALITY)
+# Most sensitive settings to capture finest internal details
+sam_internal:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # Maximum sensitivity for capturing all internal details
+  points_per_side: 64  # Maximum sampling points
+  pred_iou_thresh: 0.78  # Very permissive for fine details
+  stability_score_thresh: 0.76  # Very low threshold = many masks
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 1  # No downscaling
+  min_mask_region_area: 20  # Very small minimum (3x more sensitive than semantic SAM)
+  box_nms_thresh: 0.5  # Aggressive NMS
+
+train:
+  is_train_stroke: False
+  is_train_visual_color: True
+  is_train_struct_color: True
+  # Maximum optimization iterations
+  struct_opt_num_iters: 200
+  visual_opt_num_iters: 300
+
+# Bezier Splatting parameters (for v4 pipeline)
+# BEST QUALITY: 1024 curves, 8000 iterations
+bs:
+  bezier_degree: 4
+  num_samples: 64
+  iterations: 8000
+  mode: "closed"
+  lr: 0.01
+  min_curves: 1024          # Match max_path_num_limit
+
+# COVec parameters (for v6 pipeline - Clair Obscur / Illumination-Aware)
+# BEST QUALITY: More paths need more iterations to converge properly
+covec:
+  warmup_epochs: 100        # Warm-up epochs (2x base for better init with more shapes)
+  joint_epochs: 100         # Joint epochs (2x base for more paths)
+  max_path_rounds: 5        # Illumination refinement rounds (Paper: 5)
+  refine_iters: 150         # Iterations per refinement round (1.5x base)
+
+base_lr:
+  point: 1
+  color: 0.01
+  stroke_width: 0.1
+  stroke_color: 0.01

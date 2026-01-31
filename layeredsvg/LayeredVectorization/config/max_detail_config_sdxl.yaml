@@ -1,0 +1,64 @@
+# Max-Detail SDXL Vectorization Config (1024x1024)
+# ABSOLUTE MAXIMUM detail capture - requires 24GB+ GPU
+# For use with app3.py only
+# Processing time: ~2-3 hours
+
+simp_img_seq_indexs: [80, 60, 40, 20, 0]
+is_save_all_simp_img_seq: True
+is_save_masks: True
+multiple: 1
+
+# FINEST path curves
+approxpolydp_epsilon: 1.5
+
+color_fitting_type: "dominan" # "dominan" or "mse"
+
+# MAXIMUM refinement rounds
+add_visual_path_num_iters: 16
+
+# QUADRUPLE the paths - requires 24GB+ GPU
+max_path_num_limit: 4096
+
+# Path merging/removal - KEEP MORE DETAILS
+paths_merge_color_threshold: 0.05
+paths_merge_distance_threshold: 2
+paths_remove_visual_threshold: 3.0
+
+# RICHEST color palette
+is_cluster_target_img: True
+kmeas_k: 250
+
+sam:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # SDXL-optimized SAM settings (1024x1024)
+  points_per_side: 40
+  pred_iou_thresh: 0.84
+  stability_score_thresh: 0.83
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 2
+  min_mask_region_area: 50
+  box_nms_thresh: 0.7
+
+train:
+  is_train_stroke: False
+  is_train_visual_color: True
+  is_train_struct_color: True
+  struct_opt_num_iters: 300
+  visual_opt_num_iters: 400
+
+# Bezier Splatting parameters (for v4 pipeline)
+# MAX DETAIL: 4096 curves, 10000 iterations
+bs:
+  bezier_degree: 4
+  num_samples: 64
+  iterations: 10000         # More iterations for max detail
+  mode: "closed"
+  lr: 0.01
+  min_curves: 4096          # Match max_path_num_limit
+
+base_lr:
+  point: 1
+  color: 0.01
+  stroke_width: 0.1
+  stroke_color: 0.01

@@ -1,0 +1,65 @@
+# High Quality SDXL Vectorization Config (1024x1024)
+# Optimized SAM parameters for SDXL's higher resolution
+# For use with app3.py only
+
+simp_img_seq_indexs: [80, 60, 40, 20, 0]
+is_save_all_simp_img_seq: True
+is_save_masks: True
+multiple: 1
+
+# Lower epsilon = more detailed path curves
+approxpolydp_epsilon: 3
+
+color_fitting_type: "dominan" # "dominan" or "mse"
+
+# More visual refinement iterations
+add_visual_path_num_iters: 8
+
+# Increase max paths for more detail
+max_path_num_limit: 512
+
+paths_merge_color_threshold: 0.1
+paths_merge_distance_threshold: 3
+paths_remove_visual_threshold: 7.0
+
+# Perform kmeans clustering on target images to reduce color categories
+is_cluster_target_img: True
+# More color clusters for richer palette
+kmeas_k: 120
+
+sam:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # SDXL-optimized SAM settings (1024x1024)
+  points_per_side: 32  # Reduced for 1024px
+  pred_iou_thresh: 0.86  # Balanced
+  stability_score_thresh: 0.86
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 2
+  min_mask_region_area: 100  # Scaled 4x for 1024x1024
+  box_nms_thresh: 0.7
+
+train:
+  is_train_stroke: False
+  is_train_visual_color: True
+  is_train_struct_color: True
+  # Double the structural optimization iterations
+  struct_opt_num_iters: 100
+  # Double the visual optimization iterations
+  visual_opt_num_iters: 200
+
+# Bezier Splatting parameters (for v4 pipeline)
+# HIGH QUALITY: 512 curves, 6000 iterations
+bs:
+  bezier_degree: 4
+  num_samples: 64
+  iterations: 6000
+  mode: "closed"
+  lr: 0.01
+  min_curves: 512           # Match max_path_num_limit
+
+base_lr:
+  point: 1
+  color: 0.01
+  stroke_width: 0.1
+  stroke_color: 0.01

@@ -1,0 +1,62 @@
+# SDXL Vectorization Config (1024x1024)
+# Optimized SAM parameters for SDXL's higher resolution
+# For use with app3.py only
+#
+# Key differences from 512x512 configs:
+# - min_mask_region_area scaled 4x (1024^2 / 512^2 = 4)
+# - points_per_side reduced to avoid NMS device mismatch
+# - Higher thresholds to reduce mask count
+
+simp_img_seq_indexs: [80, 60, 40, 20, 0]
+is_save_all_simp_img_seq: True
+is_save_masks: True
+multiple: 1
+approxpolydp_epsilon: 5
+color_fitting_type: "dominan" # "dominan" or "mse"
+add_visual_path_num_iters: 5
+max_path_num_limit: 256
+
+paths_merge_color_threshold: 0.1
+paths_merge_distance_threshold: 3
+paths_remove_visual_threshold: 7.0
+
+# Perform kmeans clustering on target images to reduce color categories
+is_cluster_target_img: True
+kmeas_k: 80
+
+sam:
+  sam_checkpoint: "checkpoints/sam_vit_h_4b8939.pth"
+  model_type: "vit_h"
+  # SDXL-optimized SAM settings (1024x1024)
+  # Reduced points_per_side to avoid generating too many mask candidates
+  points_per_side: 32  # Down from 48 (1024px needs fewer sample points)
+  pred_iou_thresh: 0.88  # Up from 0.84 (stricter = fewer masks)
+  stability_score_thresh: 0.88  # Up from 0.83 (stricter = fewer masks)
+  crop_n_layers: 1
+  crop_n_points_downscale_factor: 2
+  # Scale min_mask_region_area by 4x for 1024x1024 (4x more pixels than 512x512)
+  min_mask_region_area: 100  # Up from 25 (25 * 4 = 100)
+  box_nms_thresh: 0.7
+
+train:
+  is_train_stroke: False
+  is_train_visual_color: True
+  is_train_struct_color: True
+  struct_opt_num_iters: 50
+  visual_opt_num_iters: 100
+
+# Bezier Splatting parameters (for v4 pipeline)
+# V4 uses BS rendering instead of DiffVG
+bs:
+  bezier_degree: 4          # Degree of Bezier curves
+  num_samples: 64           # Samples per curve for rendering
+  iterations: 5000          # Total optimization iterations
+  mode: "closed"            # "closed" or "unclosed"
+  lr: 0.01                  # Learning rate
+  min_curves: 256           # Initial curve count (like v3's max_path_num_limit)
+
+base_lr:
+  point: 1
+  color: 0.01
+  stroke_width: 0.1
+  stroke_color: 0.01
