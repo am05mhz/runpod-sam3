@@ -1,5 +1,5 @@
 """
-Flask App (Version 11) - App3 SVG Quality + App8 Layer Editability
+FastAPI App (Version 11) - App3 SVG Quality + App8 Layer Editability
 
 Combines:
 - App3's DiffVG optimization for perfect SVG output
@@ -8,11 +8,14 @@ Combines:
 Result: Each object can be moved independently without leaving holes.
 
 Run with: python app11.py
-Access at: http://localhost:5011
+Access at: http://localhost:8000
 Requires: conda activate lv8
 """
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import argparse
 import sys
@@ -20,14 +23,17 @@ from datetime import datetime
 import re
 import shutil
 import threading
+import uvicorn
 
 # Add LayeredVectorization to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'LayeredVectorization'))
 
-app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['RESULTS_FOLDER'] = 'results_v11'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app = FastAPI(title="V11 Layered Vectorization")
+app.config = {
+    'UPLOAD_FOLDER': 'uploads',
+    'RESULTS_FOLDER': 'results_v11',
+    'MAX_CONTENT_LENGTH': 16 * 1024 * 1024
+}
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
@@ -35,63 +41,66 @@ os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
 processing_status = {}
 processing_threads = {}
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
 
-@app.route('/')
-def index():
-    return render_template('index_v11.html')
+@app.get("/")
+async def index():
+    with open('templates/index_v11.html', 'r') as f:
+        return HTMLResponse(content=f.read())
 
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...), 
+                      quality: str = Form("fast"),
+                      max_layers: str = Form("10"),
+                      n_depth_clusters: str = Form("3"),
+                      moge_version: str = Form("v2"),
+                      moge_resolution: str = Form("High"),
+                      mask_dilation_px: str = Form("3"),
+                      background_method: str = Form("depth")):
+    
+    if not allowed_file(file.filename):
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    
+    run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+    run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
+    os.makedirs(run_folder, exist_ok=True)
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+    filename = f"input_{file.filename}"
+    filepath = os.path.join(run_folder, filename)
+    
+    contents = await file.read()
+    with open(filepath, 'wb') as f:
+        f.write(contents)
 
-    if file and allowed_file(file.filename):
-        run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-        run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
-        os.makedirs(run_folder, exist_ok=True)
+    processing_status[run_id] = {
+        'status': 'uploaded',
+        'progress': 0,
+        'message': 'File uploaded',
+        'filename': filename,
+        'run_folder': run_folder,
+        'quality': quality,
+        'max_layers': max_layers,
+        'n_depth_clusters': n_depth_clusters,
+        'moge_version': moge_version,
+        'moge_resolution': moge_resolution,
+        'mask_dilation_px': mask_dilation_px,
+        'background_method': background_method
+    }
 
-        filename = f"input_{file.filename}"
-        filepath = os.path.join(run_folder, filename)
-        file.save(filepath)
-
-        quality = request.form.get('quality', 'fast')
-        max_layers = request.form.get('max_layers', '10')
-        n_depth_clusters = request.form.get('n_depth_clusters', '3')
-        moge_version = request.form.get('moge_version', 'v2')
-        moge_resolution = request.form.get('moge_resolution', 'High')
-        # EDGE GAP FIX: Dilate background mask by this many pixels to fill gaps
-        # Only background layer gets dilation (foreground objects stay clean)
-        mask_dilation_px = request.form.get('mask_dilation_px', '3')
-        # Background detection method: "depth" (Depth Anything) or "area" (largest mask)
-        background_method = request.form.get('background_method', 'depth')
-
-        processing_status[run_id] = {
-            'status': 'uploaded',
-            'progress': 0,
-            'message': 'File uploaded',
-            'filename': filename,
-            'run_folder': run_folder,
-            'quality': quality,
-            'max_layers': max_layers,
-            'n_depth_clusters': n_depth_clusters,
-            'moge_version': moge_version,
-            'moge_resolution': moge_resolution,
-            'mask_dilation_px': mask_dilation_px,
-            'background_method': background_method
-        }
-
-        return jsonify({'success': True, 'run_id': run_id, 'filename': filename})
-
-    return jsonify({'error': 'Invalid file type'}), 400
+    return {'success': True, 'run_id': run_id, 'filename': filename}
 
 
 def run_vectorization(run_id):
@@ -161,15 +170,12 @@ def run_vectorization(run_id):
         parser.add_argument("-c", "--config", type=str)
         parser.add_argument("-timg", "--target_image", type=str)
         parser.add_argument("-fsn", "--file_save_name", type=str, default="output")
-        # Legacy params kept for backward compat (now uses Depth Anything internally)
         parser.add_argument("--moge_version", type=str, default="v2")
         parser.add_argument("--moge_resolution", type=str, default="High")
         parser.add_argument("--max_layers", type=int, default=10)
         parser.add_argument("--n_depth_clusters", type=int, default=3)
         parser.add_argument("--min_mask_area", type=int, default=500)
-        # EDGE GAP FIX: Dilate masks to create overlap between layers
         parser.add_argument("--mask_dilation_px", type=int, default=3)
-        # Background detection: "depth" (Depth Anything) or "area" (largest mask)
         parser.add_argument("--background_method", type=str, default="depth")
         parser.add_argument("--vtracer_enable", type=bool, default=True)
         parser.add_argument("--staircase_area", type=float, default=1.5)
@@ -274,30 +280,30 @@ def run_vectorization(run_id):
             del processing_threads[run_id]
 
 
-@app.route('/process/<run_id>', methods=['POST'])
-def process_image(run_id):
+@app.post("/process/{run_id}")
+async def process_image(run_id: str):
     if run_id not in processing_status:
-        return jsonify({'error': 'Invalid run ID'}), 400
+        raise HTTPException(status_code=400, detail="Invalid run ID")
     if run_id in processing_threads:
-        return jsonify({'error': 'Already processing'}), 400
+        raise HTTPException(status_code=400, detail="Already processing")
 
     thread = threading.Thread(target=run_vectorization, args=(run_id,))
     thread.daemon = True
     thread.start()
     processing_threads[run_id] = thread
 
-    return jsonify({'success': True, 'message': 'V11 processing started'})
+    return {'success': True, 'message': 'V11 processing started'}
 
 
-@app.route('/status/<run_id>')
-def get_status(run_id):
+@app.get("/status/{run_id}")
+async def get_status(run_id: str):
     if run_id not in processing_status:
-        return jsonify({'error': 'Invalid run ID'}), 404
-    return jsonify(processing_status[run_id])
+        raise HTTPException(status_code=404, detail="Invalid run ID")
+    return processing_status[run_id]
 
 
-@app.route('/results')
-def list_results():
+@app.get("/results")
+async def list_results():
     results = []
     if os.path.exists(app.config['RESULTS_FOLDER']):
         for run_id in sorted(os.listdir(app.config['RESULTS_FOLDER']), reverse=True):
@@ -316,19 +322,22 @@ def list_results():
                     'input_file': input_files[0] if input_files else None,
                     'n_layers': n_layers
                 })
-    return jsonify(results)
+    return results
 
 
-@app.route('/results/<path:filename>')
-def serve_result(filename):
-    return send_from_directory(app.config['RESULTS_FOLDER'], filename)
+@app.get("/results/{file_path:path}")
+async def serve_result(file_path: str):
+    full_path = os.path.join(app.config['RESULTS_FOLDER'], file_path)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(full_path)
 
 
-@app.route('/view/<run_id>')
-def view_result(run_id):
+@app.get("/view/{run_id}")
+async def view_result(run_id: str):
     run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
     if not os.path.exists(run_folder):
-        return "Run not found", 404
+        raise HTTPException(status_code=404, detail="Run not found")
 
     files = {}
 
@@ -386,7 +395,9 @@ def view_result(run_id):
                     for f in sorted(filenames, key=layer_sort_key)
                 ]
 
-    return render_template('view_result_v11.html', run_id=run_id, files=files)
+    with open('templates/view_result_v11.html', 'r') as f:
+        html = f.read()
+    return HTMLResponse(content=html)
 
 
 if __name__ == '__main__':
@@ -400,6 +411,6 @@ if __name__ == '__main__':
     print("  - Per-layer DiffVG vectorization")
     print("  - Each object can be moved independently")
     print("")
-    print("Port: 5011")
+    print("Port: 8000")
     print("=" * 60)
-    app.run(debug=True, host='0.0.0.0', port=5011)
+    uvicorn.run(app, host='0.0.0.0', port=8000)

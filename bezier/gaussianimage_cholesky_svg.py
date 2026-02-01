@@ -26,7 +26,7 @@ def custom_lr_schedule(step):
     elif step < 9000:
         return 0.2                # 再升
     else:
-        return 0.1              # 最后降
+        return 0.1                # 最后降
 
 def time_cuda(func, name=""):
     torch.cuda.synchronize()
