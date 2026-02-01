@@ -105,7 +105,7 @@
                 <div class="detail-card">
                     <h3>Final PNG Preview</h3>
                     <p class="info-text">Rasterized composite of all layers</p>
-                    <img src="{{ url_for('serve_result', path=files.final_png) }}" alt="Final PNG" class="svg-display">
+                    <img src="{{ url_for('serve_result', path=files.final_png) }}" alt="Final PNG">
                     <a href="{{ url_for('serve_result', path=files.final_png) }}" download class="btn btn-small">Download PNG</a>
                 </div>
                 {% endif %}
