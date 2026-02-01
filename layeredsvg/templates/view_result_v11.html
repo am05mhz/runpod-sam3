@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>V11 Result - {{ run_id }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <style>
         .layer-gallery {
             display: grid;
@@ -85,8 +85,8 @@
                 {% if files.input %}
                 <div class="detail-card">
                     <h3>Input Image</h3>
-                    <img src="{{ url_for('serve_result', filename=files.input) }}" alt="Input">
-                    <a href="{{ url_for('serve_result', filename=files.input) }}" download class="btn btn-small">Download</a>
+                    <img src="{{ url_for('serve_result', path=files.input) }}" alt="Input">
+                    <a href="{{ url_for('serve_result', path=files.input) }}" download class="btn btn-small">Download</a>
                 </div>
                 {% endif %}
 
@@ -94,10 +94,10 @@
                 <div class="detail-card">
                     <h3>Final SVG (All Layers)</h3>
                     <p class="info-text">Contains all layers as editable groups</p>
-                    <object data="{{ url_for('serve_result', filename=files.final_svg) }}" type="image/svg+xml" class="svg-display">
+                    <object data="{{ url_for('serve_result', path=files.final_svg) }}" type="image/svg+xml" class="svg-display">
                         Your browser does not support SVG
                     </object>
-                    <a href="{{ url_for('serve_result', filename=files.final_svg) }}" download class="btn btn-small">Download SVG</a>
+                    <a href="{{ url_for('serve_result', path=files.final_svg) }}" download class="btn btn-small">Download SVG</a>
                 </div>
                 {% endif %}
 
@@ -105,8 +105,8 @@
                 <div class="detail-card">
                     <h3>Final PNG Preview</h3>
                     <p class="info-text">Rasterized composite of all layers</p>
-                    <img src="{{ url_for('serve_result', filename=files.final_png) }}" alt="Final PNG" class="svg-display">
-                    <a href="{{ url_for('serve_result', filename=files.final_png) }}" download class="btn btn-small">Download PNG</a>
+                    <img src="{{ url_for('serve_result', path=files.final_png) }}" alt="Final PNG" class="svg-display">
+                    <a href="{{ url_for('serve_result', path=files.final_png) }}" download class="btn btn-small">Download PNG</a>
                 </div>
                 {% endif %}
             </div>
@@ -122,16 +122,16 @@
                         <h4>Layer {{ i }}</h4>
 
                         {% if files.layer_pngs and i < files.layer_pngs|length %}
-                        <img src="{{ url_for('serve_result', filename=files.layer_pngs[i]) }}" alt="Layer {{ i }}" class="layer-preview">
+                        <img src="{{ url_for('serve_result', path=files.layer_pngs[i]) }}" alt="Layer {{ i }}" class="layer-preview">
                         {% endif %}
 
                         <div class="layer-actions">
-                            <a href="{{ url_for('serve_result', filename=files.layer_svgs[i]) }}" download class="btn btn-small">Download SVG</a>
+                            <a href="{{ url_for('serve_result', path=files.layer_svgs[i]) }}" download class="btn btn-small">Download SVG</a>
                             {% if files.layer_pngs and i < files.layer_pngs|length %}
-                            <a href="{{ url_for('serve_result', filename=files.layer_pngs[i]) }}" download class="btn btn-small btn-secondary">Download PNG</a>
+                            <a href="{{ url_for('serve_result', path=files.layer_pngs[i]) }}" download class="btn btn-small btn-secondary">Download PNG</a>
                             {% endif %}
                             {% if files.layer_masks and i < files.layer_masks|length %}
-                            <a href="{{ url_for('serve_result', filename=files.layer_masks[i]) }}" download class="btn btn-small btn-secondary">Download Mask</a>
+                            <a href="{{ url_for('serve_result', path=files.layer_masks[i]) }}" download class="btn btn-small btn-secondary">Download Mask</a>
                             {% endif %}
                         </div>
                     </div>

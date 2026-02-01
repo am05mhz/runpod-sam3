@@ -4,6 +4,7 @@ torchaudio
 numpy
 opencv-python
 segment-anything==1.0
+depth-anything-v3
 diffusers
 huggingface-hub
 transformers

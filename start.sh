@@ -99,8 +99,8 @@ setup_layeredsvg() {
     cp -r /app/layeredsvg /workspace/apps/
     cd /workspace/apps/layeredsvg
     pip install --upgrade --no-cache-dir -r requirements.txt
-    mkdir checkpoints
-    cd checkpoints
+    mkdir -p LayeredVectorization/checkpoints
+    cd LayeredVectorization/checkpoints
     wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 }
 

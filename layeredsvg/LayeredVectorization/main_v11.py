@@ -255,6 +255,8 @@ def decompose_into_layers(
         os.path.join(sam_checkpoint_dir, "checkpoints", "sam_vit_b_01ec64.pth"),
         "checkpoints/sam_vit_h_4b8939.pth",
         "checkpoints/sam_vit_b_01ec64.pth",
+        "../checkpoints/sam_vit_h_4b8939.pth",
+        "../checkpoints/sam_vit_b_01ec64.pth",
     ]
 
     sam_checkpoint = None
@@ -272,7 +274,7 @@ def decompose_into_layers(
     if sam_model_type not in build_functions:
         raise ValueError(f"Unknown SAM model type: {sam_model_type}")
 
-    print(f"  Using SAM: {sam_model_type}")
+    print(f"  Using SAM: {sam_model_type} with checkpoint {sam_checkpoint}")
     sam = build_functions[sam_model_type](checkpoint=sam_checkpoint)
     sam = sam.to(device)
 

@@ -11,11 +11,12 @@ import argparse
 import requests
 import torch
 import numpy as np
-
+import asyncio
 from io import BytesIO
 from PIL import Image
 from typing import Optional
 from collections import defaultdict
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -1204,6 +1205,107 @@ async def status():
     }
 
 
+# ------------------------------------------------------------------------------
+# Job queue / worker system (GPU-safe)
+# ------------------------------------------------------------------------------
+JOB_QUEUE: "asyncio.Queue[str]" = asyncio.Queue()
+JOBS: Dict[str, Dict[str, Any]] = {}  # job_id -> metadata/status
+GPU_SEMAPHORE = asyncio.Semaphore(1)  # ensure only one GPU-heavy job runs at once
+WORKER_TASKS: list[asyncio.Task] = []
+NUM_WORKERS = 1  # can increase for CPU-bound tasks; GPU semaphore protects heavy work
+
+RESULTS_DIR = Path(OUTPUT_FOLDER)
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+async def worker_loop(worker_idx: int):
+    print(f"Worker-{worker_idx} started")
+    while True:
+        job_id = await JOB_QUEUE.get()
+        job = JOBS.get(job_id)
+        if job is None:
+            JOB_QUEUE.task_done()
+            continue
+
+        job["status"] = "queued_to_running"
+        try:
+            # Acquire GPU resource for the heavy model work
+            async with GPU_SEMAPHORE:
+                job["status"] = "processing"
+                try:
+                    # Ensure supersvg model is loaded once for this job
+                    load_supersvg_model()
+
+                    mode = job.get("mode", "layered")
+                    input_path = job["input_path"]
+                    svg_path = job["svg_path"]
+                    png_path = job["png_path"]
+                    use_ollama = job.get("use_ollama", True)
+                    conf_thresh = job.get("conf_thresh", 0.3)
+                    num_rounds = job.get("num_rounds", 1)
+                    quality = job.get("quality", "default")
+                    labels = job.get("labels", None)
+
+                    if mode == "layered":
+                        # [`process_image_sam3`](supersvg/server.py) handles SAM3 service + SuperSVG
+                        process_image_sam3(
+                            input_path,
+                            svg_path,
+                            png_path,
+                            use_ollama=use_ollama,
+                            use_labels=labels,
+                            conf_thresh=conf_thresh,
+                            num_rounds=num_rounds,
+                            quality=quality,
+                        )
+                    else:
+                        # simple pipeline (no SAM3)
+                        n_segments = QUALITY_SETTINGS.get(quality, N_SEGMENTS)
+                        process_image(input_path, svg_path, png_path, n_segments=n_segments)
+
+                    job["status"] = "completed"
+                    job["svg_url"] = f"/output/{Path(svg_path).name}"
+                    job["png_url"] = f"/output/{Path(png_path).name}"
+                except Exception as e:
+                    job["status"] = "error"
+                    job["error"] = str(e)
+                    raise
+                finally:
+                    # Always unload model to free GPU after the job completes
+                    unload_supersvg_model()
+        except asyncio.CancelledError:
+            job["status"] = "cancelled"
+            raise
+        except Exception:
+            # traceback already printed by processing functions or will propagate
+            pass
+        finally:
+            JOB_QUEUE.task_done()
+
+
+@app.on_event("startup")
+async def startup_workers():
+    # spawn background worker tasks
+    loop = asyncio.get_event_loop()
+    for i in range(NUM_WORKERS):
+        t = loop.create_task(worker_loop(i))
+        WORKER_TASKS.append(t)
+    print(f"Started {NUM_WORKERS} worker(s)")
+
+
+@app.on_event("shutdown")
+async def shutdown_workers():
+    # cancel worker tasks
+    for t in WORKER_TASKS:
+        t.cancel()
+    await asyncio.gather(*WORKER_TASKS, return_exceptions=True)
+    print("Workers shutdown complete")
+
+
+# ------------------------------------------------------------------------------
+# API changes: enqueue jobs instead of synchronous processing
+# ------------------------------------------------------------------------------
+
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -1227,63 +1329,48 @@ async def upload_file(
     svg_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.svg")
     png_path = os.path.join(OUTPUT_FOLDER, f"{uid}_output.png")
 
+    # Save upload
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
-    try:
-        match mode:
-            case "layered":
-                process_image_sam3(
-                    input_path,
-                    svg_path,
-                    png_path,
-                    use_ollama=use_ollama,
-                    use_labels=labels,
-                    conf_thresh=conf_thresh,
-                    num_rounds=num_rounds,
-                    quality=quality,
-                )
-
-            case "simple":
-                if quality == 'best':
-                    segments = N_SEGMENTS_BEST
-                elif quality == 'high':
-                    segments = N_SEGMENTS_HIGH
-                else:
-                    segments = N_SEGMENTS
-                process_image(input_path, svg_path, png_path, n_segments=segments)
-
-            case _:
-                raise HTTPException(status_code=404, detail="invalid parameter")
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return {
-        "success": True,
-        "svg_url": f"/output/{os.path.basename(svg_path)}",
-        "png_url": f"/output/{os.path.basename(png_path)}",
-        'svg_filename': os.path.basename(svg_path),
-        'png_filename': os.path.basename(png_path),
+    # Create job metadata and enqueue
+    job_id = uid
+    JOBS[job_id] = {
+        "status": "queued",
+        "input_path": input_path,
+        "svg_path": svg_path,
+        "png_path": png_path,
+        "use_ollama": use_ollama,
+        "conf_thresh": conf_thresh,
+        "num_rounds": num_rounds,
+        "quality": quality,
+        "mode": mode,
+        "labels": labels,
+        "created_at": datetime.utcnow().isoformat(),
     }
 
+    try:
+        JOB_QUEUE.put_nowait(job_id)
+    except asyncio.QueueFull:
+        JOBS[job_id]["status"] = "rejected"
+        raise HTTPException(status_code=503, detail="Server busy - try again later")
 
-@app.get("/output/{filename}")
-async def serve_output(filename: str):
-    path = os.path.join(OUTPUT_FOLDER, filename)
-    if os.path.exists(path):
-        return FileResponse(path)
-    else:
-        raise HTTPException(status_code=404, detail="Media file not found")
+    return {"success": True, "job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 
-@app.get("/download/{filename}")
-async def download_file(filename: str):
-    path = os.path.join(OUTPUT_FOLDER, filename)
-    if os.path.exists(path):
-        return FileResponse(path, filename=filename)
-    else:
-        raise HTTPException(status_code=404, detail="Media file not found")
+@app.get("/job/{job_id}/status")
+async def job_status(job_id: str):
+    job = JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # return minimal status info
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "svg_url": job.get("svg_url"),
+        "png_url": job.get("png_url"),
+        "error": job.get("error"),
+    }
 
 # ------------------------------------------------------------------------------
 # CLI / Server entrypoint

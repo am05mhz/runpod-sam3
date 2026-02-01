@@ -453,6 +453,7 @@ def sam_image(device, image: Union[str, np.ndarray], masks_save_path: str = "-1"
         if model_type not in build_functions:
             raise ValueError(f"Unknown SAM model type: {model_type}. Expected one of: {list(build_functions.keys())}")
 
+        print(f"  Using SAM: {model_type} with checkpoint {sam_checkpoint}")
         sam = build_functions[model_type](checkpoint=sam_checkpoint)
         sam.to(device=device)
 

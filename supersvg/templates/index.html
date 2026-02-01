@@ -519,20 +519,60 @@
 
                 const result = await response.json();
 
-                if (result.success) {
-                    // Show preview
-                    svgPreview.src = '/output/' + result.png_url;
-                    previewContainer.style.display = 'grid';
-                    downloadSvg.href = '/download/' + result.svg_url;
-                    downloadPng.href = '/download/' + result.png_url;
-                } else {
-                    showError(result.error || 'An error occurred while processing the image.');
+                if (!result || !result.job_id) {
+                    showError(result?.error || 'Failed to start job');
+                    return;
                 }
+
+                // Poll job status
+                const jobId = result.job_id;
+                const pollIntervalMs = 2000;
+                let pollTimer = null;
+
+                async function pollOnce() {
+                    try {
+                        const res = await fetch(`/job/${jobId}/status`);
+                        if (!res.ok) {
+                            const txt = await res.text();
+                            throw new Error(txt || 'Status fetch failed');
+                        }
+                        const status = await res.json();
+
+                        if (status.status === 'completed') {
+                            clearInterval(pollTimer);
+                            // Accept either full url or filename
+                            const pngUrl = status.png_url || status.png || status.result_png || status.png_url;
+                            const svgUrl = status.svg_url || status.svg || status.result_svg || status.svg_url;
+
+                            svgPreview.src = pngUrl && pngUrl.startsWith('/') ? pngUrl : (pngUrl ? '/output/' + pngUrl : '');
+                            previewContainer.style.display = 'grid';
+                            if (svgUrl) downloadSvg.href = svgUrl.startsWith('/') ? svgUrl : '/output/' + svgUrl;
+                            if (pngUrl) downloadPng.href = pngUrl.startsWith('/') ? pngUrl : '/output/' + pngUrl;
+                        } else if (status.status === 'error') {
+                            clearInterval(pollTimer);
+                            showError(status.error || status.message || 'Processing error');
+                        } else {
+                            // update loading message if server returns any message
+                            if (status.message) loadingStatus.textContent = status.message;
+                        }
+                    } catch (err) {
+                        clearInterval(pollTimer);
+                        showError('Job polling failed: ' + (err.message || err));
+                    } finally {
+                        // hide loading only after completion/failure handled
+                    }
+                }
+
+                // start polling
+                pollTimer = setInterval(pollOnce, pollIntervalMs);
+                // run one immediate poll
+                pollOnce();
+
             } catch (err) {
                 showError('Network error. Please try again.');
             } finally {
                 clearInterval(statusInterval);
-                loading.style.display = 'none';
+                // keep loading visible while polling; it's cleared when job finishes via pollOnce
             }
         }
 

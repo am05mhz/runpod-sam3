@@ -16,6 +16,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTa
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.templating import Jinja2Templates
 import os
 import argparse
 import sys
@@ -24,6 +25,13 @@ import re
 import shutil
 import threading
 import uvicorn
+from starlette.requests import Request
+
+# moved local imports to global
+import time
+import importlib.util
+import torch
+import traceback
 
 # Add LayeredVectorization to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'LayeredVectorization'))
@@ -37,6 +45,13 @@ app.config = {
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/results", StaticFiles(directory="results_v11"), name="serve_result")
+
+# Setup Jinja2 templates
+templates = Jinja2Templates(directory="templates")
 
 processing_status = {}
 processing_threads = {}
@@ -56,9 +71,8 @@ def allowed_file(filename):
 
 
 @app.get("/")
-async def index():
-    with open('templates/index_v11.html', 'r') as f:
-        return HTMLResponse(content=f.read())
+async def index(request: Request):
+    return templates.TemplateResponse("index_v11.html", {"request": request})
 
 
 @app.post("/upload")
@@ -105,7 +119,6 @@ async def upload_file(file: UploadFile = File(...),
 
 def run_vectorization(run_id):
     """Run V11 vectorization: SAM + Depth Anything decomposition + per-layer DiffVG"""
-    import time
     original_dir = os.getcwd()
 
     try:
@@ -139,8 +152,7 @@ def run_vectorization(run_id):
         status['message'] = 'Loading models...'
 
         # Now import (after chdir - use local imports, not package imports)
-        import torch
-        import importlib.util
+        # (importlib.util, torch, time, traceback moved to module top)
 
         # Load main_v3 from file
         spec = importlib.util.spec_from_file_location("main_v3", os.path.join(layered_vec_dir, "main_v3.py"))
@@ -257,7 +269,6 @@ def run_vectorization(run_id):
             status['message'] = 'SVG not found after processing'
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         processing_status[run_id]['status'] = 'error'
         processing_status[run_id]['message'] = f'Error: {str(e)}'
@@ -334,7 +345,7 @@ async def serve_result(file_path: str):
 
 
 @app.get("/view/{run_id}")
-async def view_result(run_id: str):
+async def view_result(request: Request, run_id: str):
     run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
     if not os.path.exists(run_folder):
         raise HTTPException(status_code=404, detail="Run not found")
@@ -395,9 +406,7 @@ async def view_result(run_id: str):
                     for f in sorted(filenames, key=layer_sort_key)
                 ]
 
-    with open('templates/view_result_v11.html', 'r') as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+    return templates.TemplateResponse("view_result_v11.html", {"request": request, "files": files, "run_id": run_id})
 
 
 if __name__ == '__main__':

@@ -208,6 +208,7 @@ class SemanticLayerDecomposer:
             if self.sam_model_type not in build_functions:
                 raise ValueError(f"Unknown SAM model type: {self.sam_model_type}. Expected one of: {list(build_functions.keys())}")
 
+            print(f"  Using SAM: {self.sam_model_type} with checkpoint {self.sam_checkpoint}")
             sam = build_functions[self.sam_model_type](checkpoint=self.sam_checkpoint)
             sam.to(device=self.device)
             self._sam_raw_model = sam  # Store for SAMRefiner
