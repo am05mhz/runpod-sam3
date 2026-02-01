@@ -100,6 +100,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 ADD sam3 $WORKSPACE_DIR/sam3
 ADD bezier $WORKSPACE_DIR/bezier
 ADD supersvg $WORKSPACE_DIR/supersvg
+ADD layeredsvg $WORKSPACE_DIR/layeredsvg
 COPY start.sh /start.sh
 
 # Make sure start.sh is executable
