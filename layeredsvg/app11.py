@@ -246,24 +246,23 @@ def run_vectorization(run_id):
             status['status'] = 'completed'
             status['progress'] = 100
             status['message'] = f'Completed! {result["n_layers"]} editable layers.'
-            status['result_svg'] = os.path.relpath(final_svg, app.config['RESULTS_FOLDER'])
+            status['result_svg'] = final_svg.replace(app.config['RESULTS_FOLDER'], '')
             status['n_layers'] = result['n_layers']
 
             fullsize_svg = os.path.join(output_dir, 'final_fullsize.svg')
             if os.path.exists(fullsize_svg):
-                status['result_svg_fullsize'] = os.path.relpath(fullsize_svg, app.config['RESULTS_FOLDER'])
+                status['result_svg_fullsize'] = fullsize_svg.replace(app.config['RESULTS_FOLDER'], '')
 
             masked_svg = os.path.join(output_dir, 'final_masked.svg')
             if os.path.exists(masked_svg):
-                status['result_svg_masked'] = os.path.relpath(masked_svg, app.config['RESULTS_FOLDER'])
-
+                status['result_svg_masked'] = masked_svg.replace(app.config['RESULTS_FOLDER'], '')
             masked_fullsize_svg = os.path.join(output_dir, 'final_fullsize_masked.svg')
             if os.path.exists(masked_fullsize_svg):
-                status['result_svg_fullsize_masked'] = os.path.relpath(masked_fullsize_svg, app.config['RESULTS_FOLDER'])
+                status['result_svg_fullsize_masked'] = masked_fullsize_svg.replace(app.config['RESULTS_FOLDER'], '')
 
             fullsize_png = os.path.join(output_dir, 'final_fullsize.png')
             if os.path.exists(fullsize_png):
-                status['result_png'] = os.path.relpath(fullsize_png, app.config['RESULTS_FOLDER'])
+                status['result_png'] = fullsize_png.replace(app.config['RESULTS_FOLDER'], '')
         else:
             status['status'] = 'error'
             status['message'] = 'SVG not found after processing'
