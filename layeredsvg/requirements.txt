@@ -4,7 +4,7 @@ torchaudio
 numpy
 opencv-python
 segment-anything==1.0
-depth-anything-v3
+git+https://github.com/ByteDance-Seed/Depth-Anything-3.git
 diffusers
 huggingface-hub
 transformers

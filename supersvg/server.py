@@ -1209,7 +1209,7 @@ async def status():
 # Job queue / worker system (GPU-safe)
 # ------------------------------------------------------------------------------
 JOB_QUEUE: "asyncio.Queue[str]" = asyncio.Queue()
-JOBS: Dict[str, Dict[str, Any]] = {}  # job_id -> metadata/status
+JOBS: dict[str, dict[str, Any]] = {}  # job_id -> metadata/status
 GPU_SEMAPHORE = asyncio.Semaphore(1)  # ensure only one GPU-heavy job runs at once
 WORKER_TASKS: list[asyncio.Task] = []
 NUM_WORKERS = 1  # can increase for CPU-bound tasks; GPU semaphore protects heavy work
