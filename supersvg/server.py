@@ -12,6 +12,9 @@ import requests
 import torch
 import numpy as np
 import asyncio
+import threading
+import queue
+from datetime import datetime
 from io import BytesIO
 from PIL import Image
 from collections import defaultdict
@@ -1204,23 +1207,42 @@ async def status():
     }
 
 
+@app.get("/output/{filename}")
+def serve_output(filename: str):
+    """
+    Serve files from the SupersVG OUTPUT_FOLDER.
+    Example: GET /output/abcd_output.png
+    """
+    full_path = os.path.join(OUTPUT_FOLDER, filename)
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(full_path)
+
 # ------------------------------------------------------------------------------
-# Job queue / worker system (GPU-safe)
+# Job queue / worker system (GPU-safe) - THREADED implementation
 # ------------------------------------------------------------------------------
-JOB_QUEUE: "asyncio.Queue[str]" = asyncio.Queue()
+# Use a thread-safe queue + threading.Semaphore so the heavy GPU work runs
+# in a dedicated background thread and does not block FastAPI's event loop.
+JOB_QUEUE = queue.Queue()
 JOBS = {}  # job_id -> metadata/status
-GPU_SEMAPHORE = asyncio.Semaphore(1)  # ensure only one GPU-heavy job runs at once
-WORKER_TASKS = []
-NUM_WORKERS = 1  # can increase for CPU-bound tasks; GPU semaphore protects heavy work
+GPU_SEMAPHORE = threading.Semaphore(1)  # ensure only one GPU-heavy job runs at once
+WORKER_THREAD = None
+WORKER_THREADS = []
+STOP_EVENT = threading.Event()
+NUM_WORKERS = 1  # number of background threads
 
 RESULTS_DIR = Path(OUTPUT_FOLDER)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-async def worker_loop(worker_idx: int):
-    print(f"Worker-{worker_idx} started")
-    while True:
-        job_id = await JOB_QUEUE.get()
+def worker_thread_loop(worker_idx: int):
+    print(f"WorkerThread-{worker_idx} started")
+    while not STOP_EVENT.is_set():
+        try:
+            job_id = JOB_QUEUE.get(timeout=1)
+        except queue.Empty:
+            continue
+
         job = JOBS.get(job_id)
         if job is None:
             JOB_QUEUE.task_done()
@@ -1228,8 +1250,8 @@ async def worker_loop(worker_idx: int):
 
         job["status"] = "queued_to_running"
         try:
-            # Acquire GPU resource for the heavy model work
-            async with GPU_SEMAPHORE:
+            # Acquire GPU resource for the heavy model work (threading semaphore)
+            with GPU_SEMAPHORE:
                 job["status"] = "processing"
                 try:
                     # Ensure supersvg model is loaded once for this job
@@ -1246,7 +1268,7 @@ async def worker_loop(worker_idx: int):
                     labels = job.get("labels", None)
 
                     if mode == "layered":
-                        # [`process_image_sam3`](supersvg/server.py) handles SAM3 service + SuperSVG
+                        # process_image_sam3 is synchronous and heavy - run in this worker thread
                         process_image_sam3(
                             input_path,
                             svg_path,
@@ -1268,37 +1290,38 @@ async def worker_loop(worker_idx: int):
                 except Exception as e:
                     job["status"] = "error"
                     job["error"] = str(e)
+                    # allow exception to be logged below
                     raise
                 finally:
                     # Always unload model to free GPU after the job completes
                     unload_supersvg_model()
-        except asyncio.CancelledError:
-            job["status"] = "cancelled"
-            raise
         except Exception:
             # traceback already printed by processing functions or will propagate
-            pass
+            traceback.print_exc()
         finally:
-            JOB_QUEUE.task_done()
+            try:
+                JOB_QUEUE.task_done()
+            except Exception:
+                pass
 
 
 @app.on_event("startup")
 async def startup_workers():
-    # spawn background worker tasks
-    loop = asyncio.get_event_loop()
+    # start background worker threads (not asyncio tasks) so FastAPI loop stays responsive
     for i in range(NUM_WORKERS):
-        t = loop.create_task(worker_loop(i))
-        WORKER_TASKS.append(t)
-    print(f"Started {NUM_WORKERS} worker(s)")
+        t = threading.Thread(target=worker_thread_loop, args=(i,), daemon=True)
+        WORKER_THREADS.append(t)
+        t.start()
+    print(f"Started {NUM_WORKERS} worker thread(s)")
 
 
 @app.on_event("shutdown")
 async def shutdown_workers():
-    # cancel worker tasks
-    for t in WORKER_TASKS:
-        t.cancel()
-    await asyncio.gather(*WORKER_TASKS, return_exceptions=True)
-    print("Workers shutdown complete")
+    # signal workers to stop and join
+    STOP_EVENT.set()
+    for t in WORKER_THREADS:
+        t.join(timeout=5.0)
+    print("Worker threads shutdown complete")
 
 
 # ------------------------------------------------------------------------------
@@ -1332,7 +1355,7 @@ async def upload_file(
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
-    # Create job metadata and enqueue
+    # Create job metadata and enqueue (thread-safe queue)
     job_id = uid
     JOBS[job_id] = {
         "status": "queued",
@@ -1350,7 +1373,7 @@ async def upload_file(
 
     try:
         JOB_QUEUE.put_nowait(job_id)
-    except asyncio.QueueFull:
+    except queue.Full:
         JOBS[job_id]["status"] = "rejected"
         raise HTTPException(status_code=503, detail="Server busy - try again later")
 

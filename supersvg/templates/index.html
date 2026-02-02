@@ -346,10 +346,10 @@
         </div>
 
         <div class="options">
-            <div class="option-group toggle-container">
+            <div class="option-group toggle-container" style="display: none;">
                 <label>Use Ollama AI Detection:</label>
                 <label class="toggle">
-                    <input type="checkbox" id="use-ollama" checked>
+                    <input type="checkbox" id="use-ollama">
                     <span class="toggle-slider"></span>
                 </label>
             </div>
@@ -546,10 +546,13 @@
 
                             svgPreview.src = pngUrl && pngUrl.startsWith('/') ? pngUrl : (pngUrl ? '/output/' + pngUrl : '');
                             previewContainer.style.display = 'grid';
+                            loading.style.display = 'none';
                             if (svgUrl) downloadSvg.href = svgUrl.startsWith('/') ? svgUrl : '/output/' + svgUrl;
                             if (pngUrl) downloadPng.href = pngUrl.startsWith('/') ? pngUrl : '/output/' + pngUrl;
                         } else if (status.status === 'error') {
                             clearInterval(pollTimer);
+                            loading.style.display = 'none';
+                            error.style.display = 'block';
                             showError(status.error || status.message || 'Processing error');
                         } else {
                             // update loading message if server returns any message
