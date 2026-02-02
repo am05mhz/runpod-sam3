@@ -172,6 +172,7 @@ def run_vectorization(run_id):
         config_map = {
             'fast': 'base_config_v11.yaml',
             'balanced': 'high_quality_config_v11.yaml',
+            'balanced+': 'balanced_plus_config_v11.yaml',
             'high': 'ultra_quality_config_v11.yaml',
             'best': 'best_quality_config_v11.yaml',
         }
