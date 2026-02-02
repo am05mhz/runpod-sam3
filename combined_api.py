@@ -132,6 +132,21 @@ def serve_combined_output(path: str):
         raise HTTPException(status_code=404)
     return FileResponse(full)
 
+@app.get("/supersvg")
+async def supersvg_home(request: Request):
+    return templates.TemplateResponse("supersvg.html", {"request": request})
+
+@app.get("/bezier")
+async def bezier_home(request: Request):
+    return templates.TemplateResponse("bezier.html", {"request": request})
+
+@app.get("/layeredsvg")
+async def layeredsvg_home(request: Request):
+    return templates.TemplateResponse("layeredsvg.html", {"request": request})
+
+@app.get("/layeredsvg/view/{run_id}")
+async def layeredsvg_view(request: Request, run_id: str):
+    return templates.TemplateResponse("layeredsvg_view.html", {"request": request, "run_id": run_id})
 
 @app.post("/supersvg/upload")
 async def supersvg_upload(
