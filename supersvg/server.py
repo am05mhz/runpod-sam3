@@ -14,7 +14,6 @@ import numpy as np
 import asyncio
 from io import BytesIO
 from PIL import Image
-from typing import Optional
 from collections import defaultdict
 from pathlib import Path
 
@@ -1209,9 +1208,9 @@ async def status():
 # Job queue / worker system (GPU-safe)
 # ------------------------------------------------------------------------------
 JOB_QUEUE: "asyncio.Queue[str]" = asyncio.Queue()
-JOBS: dict[str, dict[str, Any]] = {}  # job_id -> metadata/status
+JOBS = {}  # job_id -> metadata/status
 GPU_SEMAPHORE = asyncio.Semaphore(1)  # ensure only one GPU-heavy job runs at once
-WORKER_TASKS: list[asyncio.Task] = []
+WORKER_TASKS = []
 NUM_WORKERS = 1  # can increase for CPU-bound tasks; GPU semaphore protects heavy work
 
 RESULTS_DIR = Path(OUTPUT_FOLDER)
@@ -1313,8 +1312,8 @@ async def upload_file(
     conf_thresh: float = Form(0.3),
     num_rounds: int = Form(1),
     quality: str = Form("default"),
-    mode: Optional[str] = Form("layered"),
-    labels: Optional[str] = Form(None),
+    mode: str | None = Form("layered"),
+    labels: str | None = Form(None),
 ):
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Invalid file type")
@@ -1360,17 +1359,17 @@ async def upload_file(
 
 @app.get("/job/{job_id}/status")
 async def job_status(job_id: str):
-    job = JOBS.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    # return minimal status info
-    return {
-        "job_id": job_id,
-        "status": job.get("status"),
-        "svg_url": job.get("svg_url"),
-        "png_url": job.get("png_url"),
-        "error": job.get("error"),
-    }
+     job = JOBS.get(job_id)
+     if job is None:
+         raise HTTPException(status_code=404, detail="Job not found")
+     # return minimal status info
+     return {
+         "job_id": job_id,
+         "status": job.get("status"),
+         "svg_url": job.get("svg_url"),
+         "png_url": job.get("png_url"),
+         "error": job.get("error"),
+     }
 
 # ------------------------------------------------------------------------------
 # CLI / Server entrypoint
