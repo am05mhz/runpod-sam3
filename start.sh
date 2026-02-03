@@ -86,7 +86,6 @@ setup_combined() {
     cp /app/combined_api.py /workspace/apps/
     cp /app/common_utils.py /workspace/apps/
     cp -r /app/templates /workspace/apps/
-    cd /workspace/apps/combined_api
 }
 
 setup_layeredsvg() {
