@@ -122,7 +122,7 @@ async def worker_loop(worker_idx: int = 0):
                     def _call_target():
                         try:
                             return fn(*module_args, **module_kwargs)
-                        except TypeError:
+                        except TypeError as te:
                             # Try filtering kwargs to only accepted parameters
                             try:
                                 sig = inspect.signature(fn)
@@ -130,10 +130,21 @@ async def worker_loop(worker_idx: int = 0):
                                 allowed = {k: v for k, v in module_kwargs.items() if k in params}
                                 if allowed:
                                     return fn(*module_args, **allowed)
-                            except Exception:
-                                pass
-                            # Fallback: call without any kwargs
-                            return fn(*module_args)
+                                else:
+                                    # No kwargs match the signature, try without any
+                                    return fn(*module_args)
+                            except Exception as sig_error:
+                                # Log the signature inspection failure and original error
+                                print(f"Warning: inspect.signature failed: {sig_error}")
+                                print(f"Original TypeError: {te}")
+                                print(f"Attempting call with all original kwargs: {module_kwargs.keys()}")
+                                # Try one more time with the original call
+                                try:
+                                    return fn(*module_args, **module_kwargs)
+                                except TypeError:
+                                    # If it still fails, try without kwargs as last resort
+                                    print(f"Fallback: calling without kwargs")
+                                    return fn(*module_args)
 
                     result = await asyncio.to_thread(_call_target)
 
@@ -189,7 +200,6 @@ async def layeredsvg_view(request: Request, run_id: str):
 @app.post("/supersvg/upload")
 async def supersvg_upload(
     file: UploadFile = File(...),
-    use_ollama: bool = Form(True),
     conf_thresh: float = Form(0.3),
     num_rounds: int = Form(1),
     quality: str = Form("default"),
@@ -206,20 +216,29 @@ async def supersvg_upload(
     with open(inp, "wb") as f:
         f.write(await file.read())
 
-    job_id = uid
-    JOBS[job_id] = {
-        "module": "supersvg",
-        "callable": "process_image_sam3",
-        "args": [inp, svg_out, png_out],
-        "kwargs": {
-            "use_ollama": use_ollama,
+    if mode == "layered":
+        callable = "process_image_sam3"
+        module_kwargs = {
+            "use_ollama": False,
             "use_labels": labels,
             "conf_thresh": conf_thresh,
             "num_rounds": num_rounds,
             "quality": quality,
-        },
-        "svg_out": svg_out,
-        "png_out": png_out,
+        }
+    else:
+        callable = "process_image"
+        module_kwargs = {
+            "n_segments": supersvg.QUALITY_SETTINGS.get(quality, supersvg.N_SEGMENTS),
+        }
+
+    job_id = uid
+    JOBS[job_id] = {
+        "module": "supersvg",
+        "callable": callable,
+        "args": [inp, svg_out, png_out],
+        "kwargs": module_kwargs,
+        "svg_out": None,
+        "png_out": None,
         "status": "queued",
         "created_at": time.time(),
     }
@@ -273,6 +292,8 @@ async def bezier_upload(
         "callable": "run_bezier_splatting",
         "args": [job_id, inp, {"num_curves": num_curves, "iterations": iterations, "mode": mode}],
         "kwargs": {},
+        "svg_out": None,
+        "png_out": None,
         "status": "queued",
         "created_at": time.time(),
     }

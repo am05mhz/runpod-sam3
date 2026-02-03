@@ -379,6 +379,11 @@
                 <label for="num-rounds">Detection Rounds:</label>
                 <input type="number" id="num-rounds" value="1" min="1" max="5">
             </div>
+
+            <div class="option-group">
+                <label for="labels">Labels:</label>
+                <input type="text" id="labels" placeholder="e.g. cat, tree, car">
+            </div>
         </div>
 
         <div class="drop-zone" id="drop-zone">
@@ -426,6 +431,7 @@
         const downloadSvg = document.getElementById('download-svg');
         const downloadPng = document.getElementById('download-png');
         const useOllama = document.getElementById('use-ollama');
+        const labels = document.getElementById('labels');
         const roundsGroup = document.getElementById('rounds-group');
 
         // Toggle rounds visibility based on Ollama setting
@@ -488,6 +494,7 @@
             formData.append('conf_thresh', document.getElementById('conf-thresh').value);
             formData.append('num_rounds', document.getElementById('num-rounds').value);
             formData.append('quality', document.getElementById('quality').value);
+            formData.append('use_labels', document.getElementById('labels').value);
 
             // Show loading, hide others
             loading.style.display = 'block';

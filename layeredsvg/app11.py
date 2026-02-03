@@ -36,96 +36,49 @@ import traceback
 # Add LayeredVectorization to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'LayeredVectorization'))
 
-app = FastAPI(title="V11 Layered Vectorization")
-app.config = {
-    'UPLOAD_FOLDER': 'uploads',
-    'RESULTS_FOLDER': 'results_v11',
-    'MAX_CONTENT_LENGTH': 16 * 1024 * 1024
-}
 
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
+if __name__ == "__main__":
+    app = FastAPI(title="V11 Layered Vectorization")
+    app.config = {
+        'UPLOAD_FOLDER': 'uploads',
+        'RESULTS_FOLDER': 'results_v11',
+        'MAX_CONTENT_LENGTH': 16 * 1024 * 1024
+    }
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    os.makedirs(app.config['RESULTS_FOLDER'], exist_ok=True)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/results", StaticFiles(directory="results_v11"), name="serve_result")
+    # Mount static files
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+    app.mount("/results", StaticFiles(directory="results_v11"), name="serve_result")
 
-# Setup Jinja2 templates
-templates = Jinja2Templates(directory="templates")
+    # Setup Jinja2 templates
+    templates = Jinja2Templates(directory="templates")
 
-processing_status = {}
-processing_threads = {}
+    processing_status = {}
+    processing_threads = {}
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
-
-
-@app.get("/")
-async def index(request: Request):
-    return templates.TemplateResponse("index_v11.html", {"request": request})
-
-
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...), 
-                      quality: str = Form("fast"),
-                      max_layers: str = Form("10"),
-                      n_depth_clusters: str = Form("3"),
-                      moge_version: str = Form("v2"),
-                      moge_resolution: str = Form("High"),
-                      mask_dilation_px: str = Form("3"),
-                      background_method: str = Form("depth")):
-    
-    if not allowed_file(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type")
-    
-    run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-    run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
-    os.makedirs(run_folder, exist_ok=True)
-
-    filename = f"input_{file.filename}"
-    filepath = os.path.join(run_folder, filename)
-    
-    contents = await file.read()
-    with open(filepath, 'wb') as f:
-        f.write(contents)
-
-    processing_status[run_id] = {
-        'status': 'uploaded',
-        'progress': 0,
-        'message': 'File uploaded',
-        'filename': filename,
-        'run_folder': run_folder,
-        'quality': quality,
-        'max_layers': max_layers,
-        'n_depth_clusters': n_depth_clusters,
-        'moge_version': moge_version,
-        'moge_resolution': moge_resolution,
-        'mask_dilation_px': mask_dilation_px,
-        'background_method': background_method
-    }
-
-    return {'success': True, 'run_id': run_id, 'filename': filename}
-
 
 def run_vectorization(run_id):
     """Run V11 vectorization: SAM + Depth Anything decomposition + per-layer DiffVG"""
     original_dir = os.getcwd()
 
     try:
-        status = processing_status[run_id]
-        status['status'] = 'processing'
-        status['progress'] = 5
-        status['message'] = 'Starting V11 layered vectorization...'
+        if __name__ == "__main__":
+            status = processing_status[run_id]
+            status['status'] = 'processing'
+            status['progress'] = 5
+            status['message'] = 'Starting V11 layered vectorization...'
 
         input_path = os.path.join(status['run_folder'], status['filename'])
         run_folder_abs = os.path.abspath(status['run_folder'])
@@ -148,8 +101,9 @@ def run_vectorization(run_id):
         except OSError:
             shutil.copytree(workdir_path, workdir_existing)
 
-        status['progress'] = 10
-        status['message'] = 'Loading models...'
+        if __name__ == "__main__":
+            status['progress'] = 10
+            status['message'] = 'Loading models...'
 
         # Now import (after chdir - use local imports, not package imports)
         # (importlib.util, torch, time, traceback moved to module top)
@@ -224,13 +178,15 @@ def run_vectorization(run_id):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         init_diffvg(device=device)
 
-        status['progress'] = 15
-        status['message'] = 'Decomposing image into layers...'
+        if __name__ == "__main__":
+            status['progress'] = 15
+            status['message'] = 'Decomposing image into layers...'
 
         # Progress callback
         def progress_callback(progress, message):
-            status['progress'] = progress
-            status['message'] = message
+            if __name__ == "__main__":
+                status['progress'] = progress
+                status['message'] = message
 
         # Run V11 pipeline
         result = layered_vectorization_v11(device, args, progress_callback=progress_callback)
@@ -246,34 +202,49 @@ def run_vectorization(run_id):
         abs_result_dir = os.path.join(os.path.dirname(__file__), app.config['RESULTS_FOLDER'])
 
         if os.path.exists(final_svg):
-            status['status'] = 'completed'
-            status['progress'] = 100
-            status['message'] = f'Completed! {result["n_layers"]} editable layers.'
-            status['result_svg'] = final_svg.replace(abs_result_dir + '/', '')
-            status['n_layers'] = result['n_layers']
+            if __name__ == "__main__":
+                status['status'] = 'completed'
+                status['progress'] = 100
+                status['message'] = f'Completed! {result["n_layers"]} editable layers.'
+                status['result_svg'] = final_svg.replace(abs_result_dir + '/', '')
+                status['n_layers'] = result['n_layers']
 
-            fullsize_svg = os.path.join(output_dir, 'final_fullsize.svg')
-            if os.path.exists(fullsize_svg):
-                status['result_svg_fullsize'] = fullsize_svg.replace(abs_result_dir + '/', '')
+                fullsize_svg = os.path.join(output_dir, 'final_fullsize.svg')
+                if os.path.exists(fullsize_svg):
+                    status['result_svg_fullsize'] = fullsize_svg.replace(abs_result_dir + '/', '')
 
-            masked_svg = os.path.join(output_dir, 'final_masked.svg')
-            if os.path.exists(masked_svg):
-                status['result_svg_masked'] = masked_svg.replace(abs_result_dir + '/', '')
-            masked_fullsize_svg = os.path.join(output_dir, 'final_fullsize_masked.svg')
-            if os.path.exists(masked_fullsize_svg):
-                status['result_svg_fullsize_masked'] = masked_fullsize_svg.replace(abs_result_dir + '/', '')
+                masked_svg = os.path.join(output_dir, 'final_masked.svg')
+                if os.path.exists(masked_svg):
+                    status['result_svg_masked'] = masked_svg.replace(abs_result_dir + '/', '')
+                masked_fullsize_svg = os.path.join(output_dir, 'final_fullsize_masked.svg')
+                if os.path.exists(masked_fullsize_svg):
+                    status['result_svg_fullsize_masked'] = masked_fullsize_svg.replace(abs_result_dir + '/', '')
 
-            fullsize_png = os.path.join(output_dir, 'final_fullsize.png')
-            if os.path.exists(fullsize_png):
-                status['result_png'] = fullsize_png.replace(abs_result_dir + '/', '')
+                fullsize_png = os.path.join(output_dir, 'final_fullsize.png')
+                if os.path.exists(fullsize_png):
+                    status['result_png'] = fullsize_png.replace(abs_result_dir + '/', '')
+            else:
+                return {
+                    'status': 'completed', 
+                    'n_layers': result['n_layers'], 
+                    'result_svg': final_svg.replace(abs_result_dir + '/', '') if os.path.exists(final_svg) else None, 
+                    'result_png': fullsize_png.replace(abs_result_dir + '/', '') if os.path.exists(fullsize_png) else None,
+                }
         else:
-            status['status'] = 'error'
-            status['message'] = 'SVG not found after processing'
+            if __name__ == "__main__":
+                status['status'] = 'error'
+                status['message'] = 'SVG not found after processing'
+            else
+                return {
+                    'status': 'error',
+                    'message': 'SVG not found after processing'
+                }
 
     except Exception as e:
         traceback.print_exc()
-        processing_status[run_id]['status'] = 'error'
-        processing_status[run_id]['message'] = f'Error: {str(e)}'
+        if __name__ == "__main__":
+            status['status'] = 'error'
+            status['message'] = f'Error: {str(e)}'
 
         # Cleanup on error
         try:
@@ -289,129 +260,169 @@ def run_vectorization(run_id):
             os.chdir(original_dir)
         except:
             pass
-        if run_id in processing_threads:
+        if __name__ == "__main__" and run_id in processing_threads:
             del processing_threads[run_id]
 
 
-@app.post("/process/{run_id}")
-async def process_image(run_id: str):
-    if run_id not in processing_status:
-        raise HTTPException(status_code=400, detail="Invalid run ID")
-    if run_id in processing_threads:
-        raise HTTPException(status_code=400, detail="Already processing")
+if __name__ == "__main__":
+    @app.get("/")
+    async def index(request: Request):
+        return templates.TemplateResponse("index_v11.html", {"request": request})
 
-    thread = threading.Thread(target=run_vectorization, args=(run_id,))
-    thread.daemon = True
-    thread.start()
-    processing_threads[run_id] = thread
+    @app.post("/upload")
+    async def upload_file(file: UploadFile = File(...), 
+                        quality: str = Form("fast"),
+                        max_layers: str = Form("10"),
+                        n_depth_clusters: str = Form("3"),
+                        moge_version: str = Form("v2"),
+                        moge_resolution: str = Form("High"),
+                        mask_dilation_px: str = Form("3"),
+                        background_method: str = Form("depth")):
+        
+        if not allowed_file(file.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type")
+        
+        run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+        run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
+        os.makedirs(run_folder, exist_ok=True)
 
-    return {'success': True, 'message': 'V11 processing started'}
+        filename = f"input_{file.filename}"
+        filepath = os.path.join(run_folder, filename)
+        
+        contents = await file.read()
+        with open(filepath, 'wb') as f:
+            f.write(contents)
 
+        processing_status[run_id] = {
+            'status': 'uploaded',
+            'progress': 0,
+            'message': 'File uploaded',
+            'filename': filename,
+            'run_folder': run_folder,
+            'quality': quality,
+            'max_layers': max_layers,
+            'n_depth_clusters': n_depth_clusters,
+            'moge_version': moge_version,
+            'moge_resolution': moge_resolution,
+            'mask_dilation_px': mask_dilation_px,
+            'background_method': background_method
+        }
 
-@app.get("/status/{run_id}")
-async def get_status(run_id: str):
-    if run_id not in processing_status:
-        raise HTTPException(status_code=404, detail="Invalid run ID")
-    return processing_status[run_id]
+        return {'success': True, 'run_id': run_id, 'filename': filename}
 
+    @app.post("/process/{run_id}")
+    async def process_image(run_id: str):
+        if run_id not in processing_status:
+            raise HTTPException(status_code=400, detail="Invalid run ID")
+        if run_id in processing_threads:
+            raise HTTPException(status_code=400, detail="Already processing")
 
-@app.get("/results")
-async def list_results():
-    results = []
-    if os.path.exists(app.config['RESULTS_FOLDER']):
-        for run_id in sorted(os.listdir(app.config['RESULTS_FOLDER']), reverse=True):
-            run_path = os.path.join(app.config['RESULTS_FOLDER'], run_id)
-            if os.path.isdir(run_path):
-                final_svg = os.path.join(run_path, 'workdir', 'output', 'final.svg')
-                layers_dir = os.path.join(run_path, 'workdir', 'output', 'layers')
-                n_layers = None
-                if os.path.exists(layers_dir):
-                    layer_svgs = [f for f in os.listdir(layers_dir) if f.endswith('.svg')]
-                    n_layers = len(layer_svgs)
-                input_files = [f for f in os.listdir(run_path) if f.startswith('input_')]
-                results.append({
-                    'run_id': run_id,
-                    'has_result': os.path.exists(final_svg),
-                    'input_file': input_files[0] if input_files else None,
-                    'n_layers': n_layers
-                })
-    return results
+        thread = threading.Thread(target=run_vectorization, args=(run_id,))
+        thread.daemon = True
+        thread.start()
+        processing_threads[run_id] = thread
 
+        return {'success': True, 'message': 'V11 processing started'}
 
-@app.get("/results/{file_path:path}")
-async def serve_result(file_path: str):
-    full_path = os.path.join(app.config['RESULTS_FOLDER'], file_path)
-    if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(full_path)
+    @app.get("/status/{run_id}")
+    async def get_status(run_id: str):
+        if run_id not in processing_status:
+            raise HTTPException(status_code=404, detail="Invalid run ID")
+        return processing_status[run_id]
 
+    @app.get("/results")
+    async def list_results():
+        results = []
+        if os.path.exists(app.config['RESULTS_FOLDER']):
+            for run_id in sorted(os.listdir(app.config['RESULTS_FOLDER']), reverse=True):
+                run_path = os.path.join(app.config['RESULTS_FOLDER'], run_id)
+                if os.path.isdir(run_path):
+                    final_svg = os.path.join(run_path, 'workdir', 'output', 'final.svg')
+                    layers_dir = os.path.join(run_path, 'workdir', 'output', 'layers')
+                    n_layers = None
+                    if os.path.exists(layers_dir):
+                        layer_svgs = [f for f in os.listdir(layers_dir) if f.endswith('.svg')]
+                        n_layers = len(layer_svgs)
+                    input_files = [f for f in os.listdir(run_path) if f.startswith('input_')]
+                    results.append({
+                        'run_id': run_id,
+                        'has_result': os.path.exists(final_svg),
+                        'input_file': input_files[0] if input_files else None,
+                        'n_layers': n_layers
+                    })
+        return results
 
-@app.get("/view/{run_id}")
-async def view_result(request: Request, run_id: str):
-    run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
-    if not os.path.exists(run_folder):
-        raise HTTPException(status_code=404, detail="Run not found")
+    @app.get("/results/{file_path:path}")
+    async def serve_result(file_path: str):
+        full_path = os.path.join(app.config['RESULTS_FOLDER'], file_path)
+        if not os.path.exists(full_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        return FileResponse(full_path)
 
-    files = {}
+    @app.get("/view/{run_id}")
+    async def view_result(request: Request, run_id: str):
+        run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
+        if not os.path.exists(run_folder):
+            raise HTTPException(status_code=404, detail="Run not found")
 
-    input_files = [f for f in os.listdir(run_folder) if f.startswith('input_')]
-    if input_files:
-        files['input'] = os.path.join(run_id, input_files[0])
+        files = {}
 
-    output_dir = os.path.join(run_folder, 'workdir', 'output')
+        input_files = [f for f in os.listdir(run_folder) if f.startswith('input_')]
+        if input_files:
+            files['input'] = os.path.join(run_id, input_files[0])
 
-    final_svg_fullsize = os.path.join(output_dir, 'final_fullsize.svg')
-    if os.path.exists(final_svg_fullsize):
-        files['final_svg_fullsize'] = os.path.relpath(final_svg_fullsize, app.config['RESULTS_FOLDER'])
+        output_dir = os.path.join(run_folder, 'workdir', 'output')
 
-    final_svg_fullsize_masked = os.path.join(output_dir, 'final_fullsize_masked.svg')
-    if os.path.exists(final_svg_fullsize_masked):
-        files['final_svg_fullsize_masked'] = os.path.relpath(final_svg_fullsize_masked, app.config['RESULTS_FOLDER'])
+        final_svg_fullsize = os.path.join(output_dir, 'final_fullsize.svg')
+        if os.path.exists(final_svg_fullsize):
+            files['final_svg_fullsize'] = os.path.relpath(final_svg_fullsize, app.config['RESULTS_FOLDER'])
 
-    final_svg = os.path.join(output_dir, 'final.svg')
-    if os.path.exists(final_svg):
-        files['final_svg'] = os.path.relpath(final_svg, app.config['RESULTS_FOLDER'])
+        final_svg_fullsize_masked = os.path.join(output_dir, 'final_fullsize_masked.svg')
+        if os.path.exists(final_svg_fullsize_masked):
+            files['final_svg_fullsize_masked'] = os.path.relpath(final_svg_fullsize_masked, app.config['RESULTS_FOLDER'])
 
-    final_svg_masked = os.path.join(output_dir, 'final_masked.svg')
-    if os.path.exists(final_svg_masked):
-        files['final_svg_masked'] = os.path.relpath(final_svg_masked, app.config['RESULTS_FOLDER'])
+        final_svg = os.path.join(output_dir, 'final.svg')
+        if os.path.exists(final_svg):
+            files['final_svg'] = os.path.relpath(final_svg, app.config['RESULTS_FOLDER'])
 
-    final_png = os.path.join(output_dir, 'final_fullsize.png')
-    if os.path.exists(final_png):
-        files['final_png'] = os.path.relpath(final_png, app.config['RESULTS_FOLDER'])
+        final_svg_masked = os.path.join(output_dir, 'final_masked.svg')
+        if os.path.exists(final_svg_masked):
+            files['final_svg_masked'] = os.path.relpath(final_svg_masked, app.config['RESULTS_FOLDER'])
 
-    layers_dir = os.path.join(output_dir, 'layers')
-    if os.path.exists(layers_dir):
-        layer_svgs = []
-        layer_previews = []
-        layer_masks = []
-        for filename in os.listdir(layers_dir):
-            if filename.endswith('.svg'):
-                layer_svgs.append(filename)
-            elif filename.endswith('_preview.png'):
-                layer_previews.append(filename)
-            elif filename.endswith('_mask.png'):
-                layer_masks.append(filename)
+        final_png = os.path.join(output_dir, 'final_fullsize.png')
+        if os.path.exists(final_png):
+            files['final_png'] = os.path.relpath(final_png, app.config['RESULTS_FOLDER'])
 
-        def layer_sort_key(name):
-            match = re.search(r'layer_(\d+)', name)
-            return int(match.group(1)) if match else name
+        layers_dir = os.path.join(output_dir, 'layers')
+        if os.path.exists(layers_dir):
+            layer_svgs = []
+            layer_previews = []
+            layer_masks = []
+            for filename in os.listdir(layers_dir):
+                if filename.endswith('.svg'):
+                    layer_svgs.append(filename)
+                elif filename.endswith('_preview.png'):
+                    layer_previews.append(filename)
+                elif filename.endswith('_mask.png'):
+                    layer_masks.append(filename)
 
-        for filenames, key in [
-            (layer_svgs, 'layer_svgs'),
-            (layer_previews, 'layer_pngs'),
-            (layer_masks, 'layer_masks'),
-        ]:
-            if filenames:
-                files[key] = [
-                    os.path.relpath(os.path.join(layers_dir, f), app.config['RESULTS_FOLDER'])
-                    for f in sorted(filenames, key=layer_sort_key)
-                ]
+            def layer_sort_key(name):
+                match = re.search(r'layer_(\d+)', name)
+                return int(match.group(1)) if match else name
 
-    return templates.TemplateResponse("view_result_v11.html", {"request": request, "files": files, "run_id": run_id})
+            for filenames, key in [
+                (layer_svgs, 'layer_svgs'),
+                (layer_previews, 'layer_pngs'),
+                (layer_masks, 'layer_masks'),
+            ]:
+                if filenames:
+                    files[key] = [
+                        os.path.relpath(os.path.join(layers_dir, f), app.config['RESULTS_FOLDER'])
+                        for f in sorted(filenames, key=layer_sort_key)
+                    ]
 
+        return templates.TemplateResponse("view_result_v11.html", {"request": request, "files": files, "run_id": run_id})
 
-if __name__ == '__main__':
     print("=" * 60)
     print("V11 Layered Vectorization")
     print("App3 SVG Quality + App8 Layer Editability")

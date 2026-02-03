@@ -975,6 +975,7 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
 
     # Step 1: Generate SAM3 masks via service
     print("\n--- Step 1: SAM3 Segmentation (via service) ---")
+    print(f"Using Labels: {use_labels if use_labels else 'Generic objects'}")
     masks, labels = generate_sam3_masks_via_service(
         image_pil,
         use_ollama=use_ollama,
