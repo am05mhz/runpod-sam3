@@ -105,6 +105,7 @@ ADD templates $WORKSPACE_DIR/templates
 COPY combined_api.py $WORKSPACE_DIR/combined_api.py
 COPY common_utils.py $WORKSPACE_DIR/common_utils.py
 COPY start.sh /start.sh
+COPY logo.txt /etc/runpod.txt
 
 # Make sure start.sh is executable
 RUN chmod +x /start.sh

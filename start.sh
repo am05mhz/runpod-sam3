@@ -111,8 +111,8 @@ setup_layeredsvg() {
     fi
     cd diffvg
     git submodule update --init --recursive
-    python setup.py install
     cp -r /app/layeredsvg /workspace/apps/
+    python setup.py install
     cd /workspace/apps/layeredsvg
     pip install --upgrade --no-cache-dir -r requirements.txt
     mkdir -p LayeredVectorization/checkpoints
