@@ -103,8 +103,12 @@ setup_layeredsvg() {
         git clone https://github.com/SZUVIZ/layered_vectorization.git layeredsvg
     fi
     cd /workspace/apps/layeredsvg
-    git clone https://github.com/linyq2117/SAMRefiner.git
-    git clone https://github.com/BachiLi/diffvg.git
+    if [ ! -d "SAMRefiner" ]; then
+        git clone https://github.com/linyq2117/SAMRefiner.git
+    fi
+    if [ ! -d "diffvg" ]; then
+        git clone https://github.com/BachiLi/diffvg.git
+    fi
     cd diffvg
     git submodule update --init --recursive
     python setup.py install
