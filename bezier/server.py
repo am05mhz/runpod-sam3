@@ -6,6 +6,7 @@ import json
 import threading
 import argparse
 import uvicorn
+import traceback
 import svgwrite
 from scipy.special import comb
 from datetime import datetime
@@ -31,6 +32,11 @@ from PIL import Image
 import torchvision.transforms as transforms
 from pytorch_msssim import ms_ssim
 import torch.nn.functional as F
+from scipy.special import comb
+from scipy.stats import norm
+
+from gaussianimage_cholesky_svg import GaussianImage_Cholesky
+from utils import sparse_coord_init
 
 # -------------------------
 # App setup
@@ -170,8 +176,6 @@ def generate_svg_interpolated_fill(gaussian_model, svg_path, canvas_width, canva
     between interpolation levels, similar to how the PNG uses xyz_area.
     This eliminates the white gaps between adjacent shapes.
     """
-    from scipy.stats import norm
-
     with torch.no_grad():
         control_points = gaussian_model._control_points.detach().cpu()
         features_dc = torch.sigmoid(gaussian_model._features_dc.detach()).cpu()
@@ -606,16 +610,16 @@ class Args:
 def run_bezier_splatting(job_id, image_path, args):
     """Run Bezier splatting training in background"""
     try:
-        jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['progress'] = 0
+        if jobs[job_id] is not None:
+            # only exists if it handles its own jobs
+            jobs[job_id]['status'] = 'processing'
+            jobs[job_id]['progress'] = 0
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         gt_image = image_path_to_tensor(image_path).to(device)
 
         BLOCK_H, BLOCK_W = 16, 16
         H, W = gt_image.shape[2], gt_image.shape[3]
-
-        from gaussianimage_cholesky_svg import GaussianImage_Cholesky
 
         gaussian_model = GaussianImage_Cholesky(
             loss_type="L2",
@@ -631,8 +635,6 @@ def run_bezier_splatting(job_id, image_path, args):
             quantize=False
         ).to(device)
 
-        from utils import sparse_coord_init
-
         gaussian_model.train()
         start_time = time.time()
         remove_iter = 500
@@ -644,9 +646,10 @@ def run_bezier_splatting(job_id, image_path, args):
             else:
                 loss, psnr, pred_image = gaussian_model.train_iter(gt_image)
 
-            jobs[job_id]['progress'] = int((iter / args.iterations) * 100)
-            jobs[job_id]['psnr'] = f"{psnr:.2f}"
-            jobs[job_id]['iteration'] = iter
+            if jobs[job_id] is not None:
+                jobs[job_id]['progress'] = int((iter / args.iterations) * 100)
+                jobs[job_id]['psnr'] = f"{psnr:.2f}"
+                jobs[job_id]['iteration'] = iter
 
             with torch.no_grad():
                 max_iter = 14000 if args.mode == "unclosed" else 9200
@@ -688,17 +691,18 @@ def run_bezier_splatting(job_id, image_path, args):
 
         training_time = time.time() - start_time
 
-        jobs[job_id]['status'] = 'completed'
-        jobs[job_id]['progress'] = 100
-        jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
-        jobs[job_id]['svg_file'] = f"{job_id}/{svg_filename}"
-        jobs[job_id]['final_psnr'] = f"{final_psnr:.2f}"
-        jobs[job_id]['final_ms_ssim'] = f"{final_ms_ssim:.4f}"
-        jobs[job_id]['training_time'] = f"{training_time:.2f}s"
-
         checkpoint_path = job_folder / "model.pth.tar"
         torch.save(gaussian_model.state_dict(), checkpoint_path)
-        jobs[job_id]['model_file'] = f"{job_id}/model.pth.tar"
+
+        if jobs[job_id] is not None:
+            jobs[job_id]['status'] = 'completed'
+            jobs[job_id]['progress'] = 100
+            jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
+            jobs[job_id]['svg_file'] = f"{job_id}/{svg_filename}"
+            jobs[job_id]['final_psnr'] = f"{final_psnr:.2f}"
+            jobs[job_id]['final_ms_ssim'] = f"{final_ms_ssim:.4f}"
+            jobs[job_id]['training_time'] = f"{training_time:.2f}s"
+            jobs[job_id]['model_file'] = f"{job_id}/model.pth.tar"
 
         metadata = {
             'job_id': job_id,
@@ -730,24 +734,24 @@ def run_bezier_splatting(job_id, image_path, args):
             json.dump(metadata, f, indent=2)
 
     except Exception as e:
-        jobs[job_id]['status'] = 'failed'
-        jobs[job_id]['error'] = str(e)
-        import traceback
+        if jobs[job_id] is not None:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['error'] = str(e)
+
         print(f"Error processing job {job_id}: {traceback.format_exc()}")
 
 def run_continue_training(job_id, original_job_id, additional_iterations, image_path, args):
     """Continue training from a checkpoint"""
     try:
-        jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['progress'] = 0
+        if jobs[job_id] is not None:
+            jobs[job_id]['status'] = 'processing'
+            jobs[job_id]['progress'] = 0
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         gt_image = image_path_to_tensor(image_path).to(device)
 
         BLOCK_H, BLOCK_W = 16, 16
         H, W = gt_image.shape[2], gt_image.shape[3]
-
-        from gaussianimage_cholesky_svg import GaussianImage_Cholesky
 
         gaussian_model = GaussianImage_Cholesky(
             loss_type="L2",
@@ -779,9 +783,10 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
             else:
                 loss, psnr, pred_image = gaussian_model.train_iter(gt_image)
 
-            jobs[job_id]['progress'] = int((iter / additional_iterations) * 100)
-            jobs[job_id]['psnr'] = f"{psnr:.2f}"
-            jobs[job_id]['iteration'] = iter
+            if jobs[job_id] is not None:
+                jobs[job_id]['progress'] = int((iter / additional_iterations) * 100)
+                jobs[job_id]['psnr'] = f"{psnr:.2f}"
+                jobs[job_id]['iteration'] = iter
 
             with torch.no_grad():
                 gaussian_model.optimizer.zero_grad(set_to_none=True)
@@ -811,17 +816,18 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
 
         training_time = time.time() - start_time
 
-        jobs[job_id]['status'] = 'completed'
-        jobs[job_id]['progress'] = 100
-        jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
-        jobs[job_id]['svg_file'] = f"{job_id}/{svg_filename}"
-        jobs[job_id]['final_psnr'] = f"{final_psnr:.2f}"
-        jobs[job_id]['final_ms_ssim'] = f"{final_ms_ssim:.4f}"
-        jobs[job_id]['training_time'] = f"{training_time:.2f}s"
-
         checkpoint_path = job_folder / "model.pth.tar"
         torch.save(gaussian_model.state_dict(), checkpoint_path)
-        jobs[job_id]['model_file'] = f"{job_id}/model.pth.tar"
+
+        if jobs[job_id] is not None:
+            jobs[job_id]['status'] = 'completed'
+            jobs[job_id]['progress'] = 100
+            jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
+            jobs[job_id]['svg_file'] = f"{job_id}/{svg_filename}"
+            jobs[job_id]['final_psnr'] = f"{final_psnr:.2f}"
+            jobs[job_id]['final_ms_ssim'] = f"{final_ms_ssim:.4f}"
+            jobs[job_id]['training_time'] = f"{training_time:.2f}s"
+            jobs[job_id]['model_file'] = f"{job_id}/model.pth.tar"
 
         original_meta_path = RESULT_FOLDER / original_job_id / "metadata.json"
         original_total = 0
@@ -861,9 +867,10 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
             json.dump(metadata, f, indent=2)
 
     except Exception as e:
-        jobs[job_id]['status'] = 'failed'
-        jobs[job_id]['error'] = str(e)
-        import traceback
+        if jobs[job_id] is not None:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['error'] = str(e)
+
         print(f"Error continuing job {job_id}: {traceback.format_exc()}")
 
 # =======================================================
@@ -1046,8 +1053,6 @@ def regenerate_svg(job_id: str):
         image_path = UPLOAD_FOLDER / input_file
         gt_image = image_path_to_tensor(image_path).to(device)
         H, W = gt_image.shape[2], gt_image.shape[3]
-
-        from gaussianimage_cholesky_svg import GaussianImage_Cholesky
 
         params = metadata["params"]
         gaussian_model = GaussianImage_Cholesky(

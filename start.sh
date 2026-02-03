@@ -77,6 +77,18 @@ setup_supersvg() {
     python setup.py install
 }
 
+setup_combined() {
+    echo ""
+    echo "========================================================"
+    echo "installing combined api..."
+    echo "========================================================"
+    source /app/venv/apps/bin/activate
+    cp /app/combined_api.py /workspace/apps/
+    cp /app/common_utils.py /workspace/apps/
+    cp -r /app/templates /workspace/apps/
+    cd /workspace/apps/combined_api
+}
+
 setup_layeredsvg() {
     echo ""
     echo "========================================================"
@@ -211,6 +223,8 @@ setup_ssh
 setup_sam3
 setup_supersvg
 setup_bezier
+setup_layeredsvg
+setup_combined
 
 case $MODE_TO_RUN in
     serverless)

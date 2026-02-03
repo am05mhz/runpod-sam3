@@ -638,8 +638,8 @@
         async function pollStatus(jobId) {
             const poll = async () => {
                 try {
-                    console.log('Polling status for job:', jobId, `/status/${jobId}`);
-                    const response = await fetch(`/status/${jobId}`);
+                    console.log('Polling status for job:', jobId, `/job/${jobId}/status`);
+                    const response = await fetch(`/job/${jobId}/status`);
                     const data = await response.json();
 
                     if (data.error) {

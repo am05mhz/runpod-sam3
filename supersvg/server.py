@@ -931,7 +931,7 @@ def process_segments_batched(model, image_np, segments, pass_name="Pass"):
     print(f"{pass_name} complete: {shape_id} shapes generated")
     return shapes, groups
 
-def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=True, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
+def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
     """
     Process an image using SAM3 segmentation + SuperSVG vectorization.
 
@@ -1261,7 +1261,6 @@ def worker_thread_loop(worker_idx: int):
                     input_path = job["input_path"]
                     svg_path = job["svg_path"]
                     png_path = job["png_path"]
-                    use_ollama = job.get("use_ollama", True)
                     conf_thresh = job.get("conf_thresh", 0.3)
                     num_rounds = job.get("num_rounds", 1)
                     quality = job.get("quality", "default")
@@ -1273,7 +1272,7 @@ def worker_thread_loop(worker_idx: int):
                             input_path,
                             svg_path,
                             png_path,
-                            use_ollama=use_ollama,
+                            use_ollama=False,
                             use_labels=labels,
                             conf_thresh=conf_thresh,
                             num_rounds=num_rounds,
@@ -1403,7 +1402,6 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=str)
     parser.add_argument("--output-dir", type=str, default=OUTPUT_FOLDER)
     parser.add_argument("--max-dim", type=int, default=4096)
-    parser.add_argument("--no-ollama", action="store_true")
     parser.add_argument("--labels", type=str, default=None)
     parser.add_argument("--conf-thresh", type=float, default=0.3)
     parser.add_argument("--num-rounds", type=int, default=1)
@@ -1422,7 +1420,7 @@ if __name__ == "__main__":
             svg_out,
             png_out,
             max_dim=args.max_dim,
-            use_ollama=not args.no_ollama,
+            use_ollama=False,
             use_labels=args.labels,
             conf_thresh=args.conf_thresh,
             num_rounds=args.num_rounds,

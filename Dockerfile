@@ -101,6 +101,7 @@ ADD sam3 $WORKSPACE_DIR/sam3
 ADD bezier $WORKSPACE_DIR/bezier
 ADD supersvg $WORKSPACE_DIR/supersvg
 ADD layeredsvg $WORKSPACE_DIR/layeredsvg
+ADD templates $WORKSPACE_DIR/templates
 COPY combined_api.py $WORKSPACE_DIR/combined_api.py
 COPY common_utils.py $WORKSPACE_DIR/common_utils.py
 COPY start.sh /start.sh

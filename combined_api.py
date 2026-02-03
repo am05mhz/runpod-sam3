@@ -18,6 +18,11 @@ import traceback
 from pathlib import Path
 import uvicorn
 import time
+import threading
+import queue
+import argparse
+import inspect
+from contextlib import asynccontextmanager
 
 # local common utils
 from common_utils import (
@@ -31,7 +36,30 @@ from common_utils import (
     make_id,
 )
 
-app = FastAPI(title="Combined API - supersvg | sam3 | bezier | layeredsvg")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage app startup and shutdown with lifespan context manager"""
+    # Startup
+    def run_worker_thread():
+        asyncio.run(worker_loop(0))
+    
+    worker_thread = threading.Thread(target=run_worker_thread, daemon=True)
+    worker_thread.start()
+    print("Combined API: worker started in separate thread")
+    
+    yield
+    
+    # Shutdown
+    for t in WORKER_TASKS:
+        t.cancel()
+    await asyncio.gather(*WORKER_TASKS, return_exceptions=True)
+    print("Combined API: workers shut down")
+
+
+app = FastAPI(
+    title="Combined API - supersvg | sam3 | bezier | layeredsvg",
+    lifespan=lifespan,
+)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -50,11 +78,20 @@ safe_mkdir(OUTPUT_DIR)
 
 async def worker_loop(worker_idx: int = 0):
     print(f"[worker-{worker_idx}] started")
+    loop = asyncio.get_event_loop()
     while True:
-        job_id = await JOB_QUEUE.get()
+        # Use asyncio to wrap blocking queue.get() with timeout
+        try:
+            job_id = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: JOB_QUEUE.get(timeout=1.0)),
+                timeout=2.0
+            )
+        except (asyncio.TimeoutError, queue.Empty):
+            # No job available, keep waiting
+            continue
+        
         job = JOBS.get(job_id)
         if job is None:
-            JOB_QUEUE.task_done()
             continue
 
         job["status"] = "started"
@@ -80,8 +117,25 @@ async def worker_loop(worker_idx: int = 0):
                         raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
 
                     module_kwargs = job.get("kwargs", {})
+                    module_args = job.get("args", [])
 
-                    result = await asyncio.to_thread(lambda: fn(*job.get("args", []), **module_kwargs))
+                    def _call_target():
+                        try:
+                            return fn(*module_args, **module_kwargs)
+                        except TypeError:
+                            # Try filtering kwargs to only accepted parameters
+                            try:
+                                sig = inspect.signature(fn)
+                                params = sig.parameters
+                                allowed = {k: v for k, v in module_kwargs.items() if k in params}
+                                if allowed:
+                                    return fn(*module_args, **allowed)
+                            except Exception:
+                                pass
+                            # Fallback: call without any kwargs
+                            return fn(*module_args)
+
+                    result = await asyncio.to_thread(_call_target)
 
                     job["status"] = "completed"
                     job["result"] = result
@@ -106,23 +160,7 @@ async def worker_loop(worker_idx: int = 0):
             job["status"] = "cancelled"
             raise
         finally:
-            JOB_QUEUE.task_done()
-
-
-@app.on_event("startup")
-async def startup_workers():
-    loop = asyncio.get_event_loop()
-    t = loop.create_task(worker_loop(0))
-    WORKER_TASKS.append(t)
-    print("Combined API: worker started")
-
-
-@app.on_event("shutdown")
-async def shutdown_workers():
-    for t in WORKER_TASKS:
-        t.cancel()
-    await asyncio.gather(*WORKER_TASKS, return_exceptions=True)
-    print("Combined API: workers shut down")
+            pass
 
 
 @app.get("/combined_output/{path:path}")
@@ -185,7 +223,7 @@ async def supersvg_upload(
         "status": "queued",
         "created_at": time.time(),
     }
-    JOB_QUEUE.put_nowait(job_id)
+    JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 
@@ -233,12 +271,12 @@ async def bezier_upload(
     JOBS[job_id] = {
         "module": "bezier",
         "callable": "run_bezier_splatting",
-        "args": [job_id, inp, None],
-        "kwargs": {"num_curves": num_curves, "iterations": iterations, "mode": mode},
+        "args": [job_id, inp, {"num_curves": num_curves, "iterations": iterations, "mode": mode}],
+        "kwargs": {},
         "status": "queued",
         "created_at": time.time(),
     }
-    JOB_QUEUE.put_nowait(job_id)
+    JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 
@@ -263,7 +301,7 @@ async def layeredsvg_upload(file: UploadFile = File(...), quality: str = Form("f
         "status": "queued",
         "created_at": time.time(),
     }
-    JOB_QUEUE.put_nowait(job_id)
+    JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 
@@ -283,5 +321,10 @@ async def job_status(job_id: str):
 
 
 if __name__ == "__main__":
-    print("Starting combined_api on port 8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    parser = argparse.ArgumentParser(description="Combined API server")
+    parser.add_argument("--port", type=int, default=8000, help="Port to run the server on (default: 8000)")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    args = parser.parse_args()
+    
+    print(f"Starting combined_api on {args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port)
