@@ -42,15 +42,6 @@ from utils import sparse_coord_init
 # App setup
 # -------------------------
 
-app = FastAPI(title="Bezier Splatting API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 BASE_DIR = Path(__file__).parent
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 RESULT_FOLDER = BASE_DIR / "result"
@@ -59,13 +50,22 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 RESULT_FOLDER.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
-
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 
-# In-memory job store
-jobs = {}
+if __name__ == "__main__":
+    app = FastAPI(title="Bezier Splatting API")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+    # In-memory job store
+    jobs = {}
 
 # -------------------------
 # Utilities
@@ -127,6 +127,7 @@ def sample_bezier_curve(control_points, num_samples=50):
             point += basis * control_points[j]
         result[i] = point
     return result
+
 def generate_svg_from_model(gaussian_model, svg_path, canvas_width, canvas_height,
                             samples_per_curve=100, use_splats=False):
     """
@@ -165,7 +166,6 @@ def generate_svg_from_model(gaussian_model, svg_path, canvas_width, canvas_heigh
 
     # For open curves, use polygon method
     return generate_svg_polygons(gaussian_model, svg_path, canvas_width, canvas_height, samples_per_curve)
-
 
 def generate_svg_interpolated_fill(gaussian_model, svg_path, canvas_width, canvas_height,
                                     samples_per_curve=100, fill_resolution=10):
@@ -302,7 +302,6 @@ def generate_svg_interpolated_fill(gaussian_model, svg_path, canvas_width, canva
     dwg.save()
     return True
 
-
 def generate_svg_splats(gaussian_model, svg_path, canvas_width, canvas_height):
     """
     Generate SVG using Gaussian splat circles - same approach as PNG renderer.
@@ -370,7 +369,6 @@ def generate_svg_splats(gaussian_model, svg_path, canvas_width, canvas_height):
 
     dwg.save()
     return True
-
 
 def generate_svg_polygons(gaussian_model, svg_path, canvas_width, canvas_height,
                           samples_per_curve=100):
@@ -606,12 +604,10 @@ class Args:
         self.data_name = kwargs.get('data_name', 'upload')
         self.image_name = kwargs.get('image_name', 'image.png')
 
-
 def run_bezier_splatting(job_id, image_path, args):
     """Run Bezier splatting training in background"""
     try:
-        if jobs[job_id] is not None:
-            # only exists if it handles its own jobs
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'processing'
             jobs[job_id]['progress'] = 0
 
@@ -646,7 +642,7 @@ def run_bezier_splatting(job_id, image_path, args):
             else:
                 loss, psnr, pred_image = gaussian_model.train_iter(gt_image)
 
-            if jobs[job_id] is not None:
+            if __name__ == "__main__":
                 jobs[job_id]['progress'] = int((iter / args.iterations) * 100)
                 jobs[job_id]['psnr'] = f"{psnr:.2f}"
                 jobs[job_id]['iteration'] = iter
@@ -694,7 +690,7 @@ def run_bezier_splatting(job_id, image_path, args):
         checkpoint_path = job_folder / "model.pth.tar"
         torch.save(gaussian_model.state_dict(), checkpoint_path)
 
-        if jobs[job_id] is not None:
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'completed'
             jobs[job_id]['progress'] = 100
             jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
@@ -743,7 +739,7 @@ def run_bezier_splatting(job_id, image_path, args):
 def run_continue_training(job_id, original_job_id, additional_iterations, image_path, args):
     """Continue training from a checkpoint"""
     try:
-        if jobs[job_id] is not None:
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'processing'
             jobs[job_id]['progress'] = 0
 
@@ -783,7 +779,7 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
             else:
                 loss, psnr, pred_image = gaussian_model.train_iter(gt_image)
 
-            if jobs[job_id] is not None:
+            if __name__ == "__main__":
                 jobs[job_id]['progress'] = int((iter / additional_iterations) * 100)
                 jobs[job_id]['psnr'] = f"{psnr:.2f}"
                 jobs[job_id]['iteration'] = iter
@@ -819,7 +815,7 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
         checkpoint_path = job_folder / "model.pth.tar"
         torch.save(gaussian_model.state_dict(), checkpoint_path)
 
-        if jobs[job_id] is not None:
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'completed'
             jobs[job_id]['progress'] = 100
             jobs[job_id]['result_file'] = f"{job_id}/{result_filename}"
@@ -867,237 +863,228 @@ def run_continue_training(job_id, original_job_id, additional_iterations, image_
             json.dump(metadata, f, indent=2)
 
     except Exception as e:
-        if jobs[job_id] is not None:
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'failed'
             jobs[job_id]['error'] = str(e)
 
         print(f"Error continuing job {job_id}: {traceback.format_exc()}")
 
-# =======================================================
-# Routes
-# =======================================================
+if __name__ == "__main__":
+    # =======================================================
+    # Routes
+    # =======================================================
+    @app.get("/", response_class=HTMLResponse)
+    def index(request: Request):
+        return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    @app.post("/upload")
+    async def upload_file(
+        file: UploadFile = File(...),
+        num_curves: int = Form(512),
+        bezier_degree: int = Form(4),
+        num_samples: int = Form(64),
+        iterations: int = Form(10000),
+        mode: str = Form("closed"),
+        lr: float = Form(0.01),
+    ):
+        if not allowed_file(file.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type")
 
+        job_id = str(uuid.uuid4())[:8]
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit(".", 1)[1].lower()
+        saved_filename = f"{job_id}_input.{ext}"
+        filepath = UPLOAD_FOLDER / saved_filename
 
-@app.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    num_curves: int = Form(512),
-    bezier_degree: int = Form(4),
-    num_samples: int = Form(64),
-    iterations: int = Form(10000),
-    mode: str = Form("closed"),
-    lr: float = Form(0.01),
-):
-    if not allowed_file(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type")
+        with open(filepath, "wb") as f:
+            f.write(await file.read())
 
-    job_id = str(uuid.uuid4())[:8]
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[1].lower()
-    saved_filename = f"{job_id}_input.{ext}"
-    filepath = UPLOAD_FOLDER / saved_filename
-
-    with open(filepath, "wb") as f:
-        f.write(await file.read())
-
-    args = Args(
-        num_curves=num_curves,
-        bezier_degree=bezier_degree,
-        num_samples=num_samples,
-        iterations=iterations,
-        mode=mode,
-        lr=lr,
-        image_name=filename,
-    )
-
-    jobs[job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "input_file": saved_filename,
-        "params": {
-            "num_curves": num_curves,
-            "bezier_degree": bezier_degree,
-            "iterations": iterations,
-            "mode": mode,
-            "lr": lr,
-        },
-    }
-
-    thread = threading.Thread(
-        target=run_bezier_splatting,
-        args=(job_id, filepath, args),
-        daemon=True,
-    )
-    thread.start()
-
-    return {
-        "job_id": job_id,
-        "message": "Processing started",
-        "status_url": f"/status/{job_id}",
-    }
-
-
-@app.get("/status/{job_id}")
-def job_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
-
-
-@app.get("/jobs")
-def list_jobs():
-    return jobs
-
-
-@app.get("/history")
-def list_history():
-    history = []
-    for meta_file in RESULT_FOLDER.glob("*/metadata.json"):
-        try:
-            with open(meta_file, "r") as f:
-                history.append(json.load(f))
-        except Exception:
-            pass
-
-    history.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return history[:10]
-
-
-@app.get("/result/{path:path}")
-def get_result(path: str):
-    file_path = RESULT_FOLDER / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(file_path)
-
-
-@app.get("/uploads/{filename}")
-def get_upload(filename: str):
-    file_path = UPLOAD_FOLDER / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(file_path)
-
-
-@app.post("/continue/{original_job_id}")
-def continue_training_endpoint(
-    original_job_id: str,
-    iterations: int = Form(5000),
-):
-    metadata_path = RESULT_FOLDER / original_job_id / "metadata.json"
-    if not metadata_path.exists():
-        raise HTTPException(status_code=404, detail="Original job not found")
-
-    with open(metadata_path) as f:
-        original_meta = json.load(f)
-
-    job_id = str(uuid.uuid4())[:8]
-    input_file = original_meta["input_file"]
-    image_path = UPLOAD_FOLDER / input_file
-
-    if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Original image not found")
-
-    params = original_meta["params"]
-    args = Args(
-        num_curves=params["num_curves"],
-        bezier_degree=params["bezier_degree"],
-        num_samples=params.get("num_samples", 64),
-        iterations=iterations,
-        mode=params["mode"],
-        lr=params["lr"],
-        image_name=original_meta.get("original_filename", "image.png"),
-    )
-
-    jobs[job_id] = {
-        "status": "queued",
-        "progress": 0,
-        "input_file": input_file,
-        "continued_from": original_job_id,
-        "params": params,
-    }
-
-    thread = threading.Thread(
-        target=run_continue_training,
-        args=(job_id, original_job_id, iterations, image_path, args),
-        daemon=True,
-    )
-    thread.start()
-
-    return {
-        "job_id": job_id,
-        "message": f"Continuing training from {original_job_id}",
-        "additional_iterations": iterations,
-        "status_url": f"/status/{job_id}",
-    }
-
-
-@app.post("/convert/{job_id}")
-def regenerate_svg(job_id: str):
-    metadata_path = RESULT_FOLDER / job_id / "metadata.json"
-    model_path = RESULT_FOLDER / job_id / "model.pth.tar"
-
-    if not metadata_path.exists() or not model_path.exists():
-        raise HTTPException(status_code=404, detail="Job or model not found")
-
-    with open(metadata_path) as f:
-        metadata = json.load(f)
-
-    try:
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        input_file = metadata["input_file"]
-        image_path = UPLOAD_FOLDER / input_file
-        gt_image = image_path_to_tensor(image_path).to(device)
-        H, W = gt_image.shape[2], gt_image.shape[3]
-
-        params = metadata["params"]
-        gaussian_model = GaussianImage_Cholesky(
-            loss_type="L2",
-            opt_type="adan",
-            num_curves=params["num_curves"],
-            num_samples=params.get("num_samples", 64),
-            H=H,
-            W=W,
-            BLOCK_H=16,
-            BLOCK_W=16,
-            device=device,
-            lr=params["lr"],
-            mode=params["mode"],
-            bezier_degree=params["bezier_degree"],
-            quantize=False,
-        ).to(device)
-
-        checkpoint = torch.load(model_path, map_location=device)
-        model_dict = gaussian_model.state_dict()
-        model_dict.update({
-            k: v for k, v in checkpoint.items()
-            if k in model_dict and v.shape == model_dict[k].shape
-        })
-        gaussian_model.load_state_dict(model_dict, strict=False)
-        gaussian_model.eval()
-
-        svg_path = RESULT_FOLDER / job_id / "result.svg"
-        generate_svg_from_model(gaussian_model, str(svg_path), W, H)
-
-        return {
-            "success": True,
-            "svg_file": f"{job_id}/result.svg",
-        }
-
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)},
+        args = Args(
+            num_curves=num_curves,
+            bezier_degree=bezier_degree,
+            num_samples=num_samples,
+            iterations=iterations,
+            mode=mode,
+            lr=lr,
+            image_name=filename,
         )
 
-# -----------------------
-# Run server
-# -----------------------
-if __name__ == "__main__":
+        jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "input_file": saved_filename,
+            "params": {
+                "num_curves": num_curves,
+                "bezier_degree": bezier_degree,
+                "iterations": iterations,
+                "mode": mode,
+                "lr": lr,
+            },
+        }
+
+        thread = threading.Thread(
+            target=run_bezier_splatting,
+            args=(job_id, filepath, args),
+            daemon=True,
+        )
+        thread.start()
+
+        return {
+            "job_id": job_id,
+            "message": "Processing started",
+            "status_url": f"/status/{job_id}",
+        }
+
+    @app.get("/status/{job_id}")
+    def job_status(job_id: str):
+        if job_id not in jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return jobs[job_id]
+
+    @app.get("/jobs")
+    def list_jobs():
+        return jobs
+
+    @app.get("/history")
+    def list_history():
+        history = []
+        for meta_file in RESULT_FOLDER.glob("*/metadata.json"):
+            try:
+                with open(meta_file, "r") as f:
+                    history.append(json.load(f))
+            except Exception:
+                pass
+
+        history.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return history[:10]
+
+    @app.get("/result/{path:path}")
+    def get_result(path: str):
+        file_path = RESULT_FOLDER / path
+        if not file_path.exists():
+            raise HTTPException(status_code=404)
+        return FileResponse(file_path)
+
+    @app.get("/uploads/{filename}")
+    def get_upload(filename: str):
+        file_path = UPLOAD_FOLDER / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404)
+        return FileResponse(file_path)
+
+    @app.post("/continue/{original_job_id}")
+    def continue_training_endpoint(
+        original_job_id: str,
+        iterations: int = Form(5000),
+    ):
+        metadata_path = RESULT_FOLDER / original_job_id / "metadata.json"
+        if not metadata_path.exists():
+            raise HTTPException(status_code=404, detail="Original job not found")
+
+        with open(metadata_path) as f:
+            original_meta = json.load(f)
+
+        job_id = str(uuid.uuid4())[:8]
+        input_file = original_meta["input_file"]
+        image_path = UPLOAD_FOLDER / input_file
+
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail="Original image not found")
+
+        params = original_meta["params"]
+        args = Args(
+            num_curves=params["num_curves"],
+            bezier_degree=params["bezier_degree"],
+            num_samples=params.get("num_samples", 64),
+            iterations=iterations,
+            mode=params["mode"],
+            lr=params["lr"],
+            image_name=original_meta.get("original_filename", "image.png"),
+        )
+
+        jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "input_file": input_file,
+            "continued_from": original_job_id,
+            "params": params,
+        }
+
+        thread = threading.Thread(
+            target=run_continue_training,
+            args=(job_id, original_job_id, iterations, image_path, args),
+            daemon=True,
+        )
+        thread.start()
+
+        return {
+            "job_id": job_id,
+            "message": f"Continuing training from {original_job_id}",
+            "additional_iterations": iterations,
+            "status_url": f"/status/{job_id}",
+        }
+
+    @app.post("/convert/{job_id}")
+    def regenerate_svg(job_id: str):
+        metadata_path = RESULT_FOLDER / job_id / "metadata.json"
+        model_path = RESULT_FOLDER / job_id / "model.pth.tar"
+
+        if not metadata_path.exists() or not model_path.exists():
+            raise HTTPException(status_code=404, detail="Job or model not found")
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        try:
+            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            input_file = metadata["input_file"]
+            image_path = UPLOAD_FOLDER / input_file
+            gt_image = image_path_to_tensor(image_path).to(device)
+            H, W = gt_image.shape[2], gt_image.shape[3]
+
+            params = metadata["params"]
+            gaussian_model = GaussianImage_Cholesky(
+                loss_type="L2",
+                opt_type="adan",
+                num_curves=params["num_curves"],
+                num_samples=params.get("num_samples", 64),
+                H=H,
+                W=W,
+                BLOCK_H=16,
+                BLOCK_W=16,
+                device=device,
+                lr=params["lr"],
+                mode=params["mode"],
+                bezier_degree=params["bezier_degree"],
+                quantize=False,
+            ).to(device)
+
+            checkpoint = torch.load(model_path, map_location=device)
+            model_dict = gaussian_model.state_dict()
+            model_dict.update({
+                k: v for k, v in checkpoint.items()
+                if k in model_dict and v.shape == model_dict[k].shape
+            })
+            gaussian_model.load_state_dict(model_dict, strict=False)
+            gaussian_model.eval()
+
+            svg_path = RESULT_FOLDER / job_id / "result.svg"
+            generate_svg_from_model(gaussian_model, str(svg_path), W, H)
+
+            return {
+                "success": True,
+                "svg_file": f"{job_id}/result.svg",
+            }
+
+        except Exception as e:
+            return JSONResponse(
+                status_code=500,
+                content={"error": str(e)},
+            )
+
+    # -----------------------
+    # Run server
+    # -----------------------
     port = get_server_port()
     print(f"Starting server on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)

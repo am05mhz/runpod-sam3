@@ -193,20 +193,11 @@ async function startProcessing() {
         }
 
         const uploadData = await uploadResponse.json();
-        currentRunId = uploadData.run_id;
+        currentRunId = uploadData.job_id;
 
         // Hide upload section, show progress
         processSection.style.display = 'none';
         progressSection.style.display = 'block';
-
-        // Start processing
-        const processResponse = await fetch(`/layeredsvg/process/${currentRunId}`, {
-            method: 'POST'
-        });
-
-        if (!processResponse.ok) {
-            throw new Error('Processing failed');
-        }
 
         // Start polling for status
         startStatusPolling();
@@ -233,7 +224,7 @@ async function checkStatus() {
     if (!currentRunId) return;
 
     try {
-        const response = await fetch(`/status/${currentRunId}`);
+        const response = await fetch(`/job/${currentRunId}/status`);
         if (!response.ok) return;
 
         const status = await response.json();

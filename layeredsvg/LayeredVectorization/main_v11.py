@@ -255,8 +255,6 @@ def decompose_into_layers(
         os.path.join(sam_checkpoint_dir, "checkpoints", "sam_vit_b_01ec64.pth"),
         "checkpoints/sam_vit_h_4b8939.pth",
         "checkpoints/sam_vit_b_01ec64.pth",
-        "../checkpoints/sam_vit_h_4b8939.pth",
-        "../checkpoints/sam_vit_b_01ec64.pth",
     ]
 
     sam_checkpoint = None

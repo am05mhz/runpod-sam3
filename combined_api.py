@@ -7,6 +7,7 @@ Place this file at:
   /home/amos/docs/repo/container/sam3-qwen-llm-dock/combined_api.py
 """
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,12 +63,13 @@ app = FastAPI(
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "templates")), name="static")
 
 COMPONENT_PATHS = {
     "supersvg": str(Path(__file__).parent / "supersvg" / "server.py"),
     "sam3": str(Path(__file__).parent / "sam3" / "server.py"),
     "bezier": str(Path(__file__).parent / "bezier" / "server.py"),
-    "layeredsvg": str(Path(__file__).parent / "layeredsvg" / "app11.py"),
+    "layeredsvg": str(Path(__file__).parent / "layeredsvg" / "server.py"),
 }
 
 UPLOAD_DIR = str(Path(__file__).parent / "combined_temp")
@@ -116,34 +118,44 @@ async def worker_loop(worker_idx: int = 0):
                     if fn is None:
                         raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
 
-                    module_kwargs = job.get("kwargs", {})
                     module_args = job.get("args", [])
+                    module_kwargs = job.get("kwargs", {})
 
                     def _call_target():
                         try:
                             return fn(*module_args, **module_kwargs)
                         except TypeError as te:
-                            # Try filtering kwargs to only accepted parameters
+                            msg = str(te).lower()
                             try:
                                 sig = inspect.signature(fn)
                                 params = sig.parameters
-                                allowed = {k: v for k, v in module_kwargs.items() if k in params}
-                                if allowed:
-                                    return fn(*module_args, **allowed)
-                                else:
-                                    # No kwargs match the signature, try without any
-                                    return fn(*module_args)
+                                accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+                                # If the function accepts **kwargs, re-try with full kwargs (shouldn't normally fail)
+                                if accepts_var_kw:
+                                    try:
+                                        return fn(*module_args, **module_kwargs)
+                                    except TypeError:
+                                        pass
+
+                                # Only filter kwargs when the error is about unexpected keyword arguments
+                                if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
+                                    allowed = {k: v for k, v in module_kwargs.items() if k in params}
+                                    if allowed:
+                                        return fn(*module_args, **allowed)
+                                    else:
+                                        return fn(*module_args)
+
+                                # For other TypeErrors (likely positional/arity issues), try calling without kwargs
+                                return fn(*module_args)
                             except Exception as sig_error:
-                                # Log the signature inspection failure and original error
                                 print(f"Warning: inspect.signature failed: {sig_error}")
                                 print(f"Original TypeError: {te}")
-                                print(f"Attempting call with all original kwargs: {module_kwargs.keys()}")
-                                # Try one more time with the original call
+                                # As a last resort try original call then try without kwargs
                                 try:
                                     return fn(*module_args, **module_kwargs)
                                 except TypeError:
-                                    # If it still fails, try without kwargs as last resort
-                                    print(f"Fallback: calling without kwargs")
+                                    print("Fallback: calling without kwargs")
                                     return fn(*module_args)
 
                     result = await asyncio.to_thread(_call_target)
@@ -237,8 +249,8 @@ async def supersvg_upload(
         "callable": callable,
         "args": [inp, svg_out, png_out],
         "kwargs": module_kwargs,
-        "svg_out": None,
-        "png_out": None,
+        "svg_out": svg_out,
+        "png_out": png_out,
         "status": "queued",
         "created_at": time.time(),
     }
@@ -283,6 +295,8 @@ async def bezier_upload(
     uid = make_id("bez")
     ext = file.filename.rsplit(".", 1)[-1]
     inp = os.path.join(UPLOAD_DIR, f"{uid}_input.{ext}")
+    svg_out = os.path.join(OUTPUT_DIR, f"{uid}_output.svg")
+    png_out = os.path.join(OUTPUT_DIR, f"{uid}_output.png")
     with open(inp, "wb") as f:
         f.write(await file.read())
 
@@ -292,24 +306,35 @@ async def bezier_upload(
         "callable": "run_bezier_splatting",
         "args": [job_id, inp, {"num_curves": num_curves, "iterations": iterations, "mode": mode}],
         "kwargs": {},
-        "svg_out": None,
-        "png_out": None,
+        "svg_out": svg_out,
+        "png_out": png_out,
         "status": "queued",
         "created_at": time.time(),
     }
     JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
-
 @app.post("/layeredsvg/upload")
-async def layeredsvg_upload(file: UploadFile = File(...), quality: str = Form("fast")):
+async def layeredsvg_upload(
+    file: UploadFile = File(...),
+    quality: str = Form("fast"),
+    max_layers: str = Form("10"),
+    n_depth_clusters: str = Form("3"),
+    moge_version: str = Form("v2"),
+    moge_resolution: str = Form("High"),
+    mask_dilation_px: str = Form("3"),
+    background_method: str = Form("depth")
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file")
-    uid = make_id("lv")
+    uid = make_id("lyr")
     ext = file.filename.rsplit(".", 1)[-1]
     run_folder = os.path.join(OUTPUT_DIR, uid)
+    filename = f"input_{file.filename}"
     os.makedirs(run_folder, exist_ok=True)
     inp = os.path.join(run_folder, f"input_{file.filename}")
+    svg_out = os.path.join(OUTPUT_DIR, f"{uid}_output.svg")
+    png_out = os.path.join(OUTPUT_DIR, f"{uid}_output.png")
     with open(inp, "wb") as f:
         f.write(await file.read())
 
@@ -318,13 +343,24 @@ async def layeredsvg_upload(file: UploadFile = File(...), quality: str = Form("f
         "module": "layeredsvg",
         "callable": "run_vectorization",
         "args": [job_id],
-        "kwargs": {},
+        "kwargs": {
+            "run_folder": run_folder,
+            "filename": filename,
+            "quality": quality,
+            "max_layers": max_layers,
+            "n_depth_clusters": n_depth_clusters,
+            "moge_version": moge_version,
+            "moge_resolution": moge_resolution,
+            "mask_dilation_px": mask_dilation_px,
+            "background_method": background_method,
+        },
+        "svg_out": svg_out,
+        "png_out": png_out,
         "status": "queued",
         "created_at": time.time(),
     }
     JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
-
 
 @app.get("/job/{job_id}/status")
 async def job_status(job_id: str):

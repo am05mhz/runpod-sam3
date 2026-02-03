@@ -217,7 +217,7 @@ def optimize_svg_precision(svg_path, decimals=2):
 #
 # 👉 Paste them EXACTLY as-is from your original file.
 # ------------------------------------------------------------------------------
-def generate_sam3_masks_via_service(image_pil, use_ollama=True, use_labels=None, conf_thresh=0.3, num_rounds=1):
+def generate_sam3_masks_via_service(image_pil, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1):
     """
     Generate automatic segmentation masks using SAM3 service.
     Calls the SAM3 service running in a separate environment.

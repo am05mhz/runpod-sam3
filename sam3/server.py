@@ -435,7 +435,7 @@ async def segment_text_endpoint(prompt: TextPrompt):
 
         for idx, mask in enumerate(raw_masks):
             score = float(raw_scores[idx])
-            if score >= conf_thresh:
+            if score >= prompt.conf_thresh:
                 all_masks.append(mask.astype(np.uint8))
                 all_scores.append(score)
                 all_labels.append(obj_name)
