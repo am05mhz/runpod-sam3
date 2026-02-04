@@ -611,7 +611,7 @@ def run_bezier_splatting(job_id, image_path, args):
             jobs[job_id]['status'] = 'processing'
             jobs[job_id]['progress'] = 0
         else:
-            args = new Args(**args)
+            args = Args(**args)
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         gt_image = image_path_to_tensor(image_path).to(device)
