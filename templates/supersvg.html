@@ -552,8 +552,8 @@
                             svgPreview.src = status.png_url;
                             previewContainer.style.display = 'grid';
                             loading.style.display = 'none';
-                            if (svgUrl) downloadSvg.href = status.svg_url;
-                            if (pngUrl) downloadPng.href = status.png_url;
+                            if (status.svg_url) downloadSvg.href = status.svg_url;
+                            if (status.png_url) downloadPng.href = status.png_url;
                         } else if (status.status === 'error') {
                             clearInterval(pollTimer);
                             loading.style.display = 'none';
