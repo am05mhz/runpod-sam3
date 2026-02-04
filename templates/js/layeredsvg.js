@@ -77,7 +77,7 @@ function setupEventListeners() {
     // Download SVG button
     downloadSvgBtn.addEventListener('click', () => {
         if (currentSvgPath) {
-            window.open(`/layeredsvg/results/${currentSvgPath}`, '_blank');
+            window.open(`${currentSvgPath}`, '_blank');
         }
     });
 
