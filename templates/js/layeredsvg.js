@@ -286,7 +286,7 @@ function showResults(status) {
 
     // Prefer PNG preview, fallback to SVG
     if (status.result_png) {
-        const pngUrl = `/layeredsvg/results/${status.result_png}`;
+        const pngUrl = `${status.png_url}`;
         const imgElement = document.createElement('img');
         imgElement.src = pngUrl;
         imgElement.style.maxWidth = '100%';
@@ -295,7 +295,7 @@ function showResults(status) {
         svgPreview.innerHTML = '';
         svgPreview.appendChild(imgElement);
     } else if (status.result_svg) {
-        const svgUrl = `/layeredsvg/results/${status.result_svg}`;
+        const svgUrl = `${status.svg_url}`;
         const svgObject = document.createElement('object');
         svgObject.data = svgUrl;
         svgObject.type = 'image/svg+xml';
