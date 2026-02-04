@@ -32,6 +32,8 @@ from common_utils import (
     JOBS,
     GPU_SEMAPHORE,
     WORKER_TASKS,
+    QUALITY_SETTINGS,
+    N_SEGMENTS,
     import_module_from_path,
     safe_mkdir,
     make_id,
@@ -167,9 +169,9 @@ async def worker_loop(worker_idx: int = 0):
                     if result is not None:
                         res_svg = result.get("result_svg", None)
                         res_png = result.get("result_png", None)
-                        if os.path.exists(res_svg):
+                        if res_svg is not None and os.path.exists(res_svg):
                             shutil.copyfile(res_svg, svg)
-                        if os.path.exists(res_png):
+                        if res_png is not None and os.path.exists(res_png):
                             shutil.copyfile(res_png, png)
                     if svg and os.path.exists(svg):
                         job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
@@ -253,7 +255,7 @@ async def supersvg_upload(
     else:
         callable = "process_image"
         module_kwargs = {
-            "n_segments": supersvg.QUALITY_SETTINGS.get(quality, supersvg.N_SEGMENTS),
+            "n_segments": QUALITY_SETTINGS.get(quality, N_SEGMENTS),
         }
 
     job_id = uid

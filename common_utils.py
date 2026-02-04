@@ -16,6 +16,18 @@ JOBS = {}
 GPU_SEMAPHORE = asyncio.Semaphore(1)  # serialize GPU-heavy jobs
 WORKER_TASKS = []
 
+WIDTH = 224
+N_SEGMENTS = 1500  # Default segment count
+N_SEGMENTS_HIGH = 5000  # High quality
+N_SEGMENTS_BEST = 10000  # Best quality - finest detail
+BATCH_SIZE = 64  # Batch size for GPU inference
+
+QUALITY_SETTINGS = {
+    "low": 500,
+    "default": 1500,
+    "high": 5000,
+    "best": 10000,
+}
 
 def make_id(prefix: str = "") -> str:
     return (prefix + "_" if prefix else "") + uuid.uuid4().hex[:8]
