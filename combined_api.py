@@ -162,19 +162,23 @@ async def worker_loop(worker_idx: int = 0):
 
                     result = await asyncio.to_thread(_call_target)
 
-                    job["status"] = result.get("status", "error")
                     job["result"] = result
                     svg = job.get("svg_out")
                     png = job.get("png_out")
                     if result is not None:
+                        job["status"] = result.get("status", "error")
                         res_svg = result.get("result_svg", None)
                         res_png = result.get("result_png", None)
                         if res_svg is not None and os.path.exists(res_svg):
                             shutil.copyfile(res_svg, svg)
                         if res_png is not None and os.path.exists(res_png):
                             shutil.copyfile(res_png, png)
+
                     if svg and os.path.exists(svg):
                         job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
+                    else:
+                        job["status"] = "error" if svg is None else "completed"
+
                     if png and os.path.exists(png):
                         job["png_url"] = f"/combined_output/{os.path.basename(png)}"
 
