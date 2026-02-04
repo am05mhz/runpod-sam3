@@ -207,7 +207,11 @@ def run_vectorization(run_id, **kwargs):
         else:
             abs_result_dir = os.path.join(os.path.dirname(__file__), 'results')
 
+
         if os.path.exists(final_svg):
+            fullsize_png = os.path.join(output_dir, 'final_fullsize.png')
+            fullsize_svg = os.path.join(output_dir, 'final_fullsize.svg')
+            
             if __name__ == "__main__":
                 status['status'] = 'completed'
                 status['progress'] = 100
@@ -215,7 +219,6 @@ def run_vectorization(run_id, **kwargs):
                 status['result_svg'] = final_svg.replace(abs_result_dir + '/', '')
                 status['n_layers'] = result['n_layers']
 
-                fullsize_svg = os.path.join(output_dir, 'final_fullsize.svg')
                 if os.path.exists(fullsize_svg):
                     status['result_svg_fullsize'] = fullsize_svg.replace(abs_result_dir + '/', '')
 
@@ -226,7 +229,6 @@ def run_vectorization(run_id, **kwargs):
                 if os.path.exists(masked_fullsize_svg):
                     status['result_svg_fullsize_masked'] = masked_fullsize_svg.replace(abs_result_dir + '/', '')
 
-                fullsize_png = os.path.join(output_dir, 'final_fullsize.png')
                 if os.path.exists(fullsize_png):
                     status['result_png'] = fullsize_png.replace(abs_result_dir + '/', '')
             else:

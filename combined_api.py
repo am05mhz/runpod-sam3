@@ -368,7 +368,7 @@ async def layeredsvg_upload(
             "mask_dilation_px": mask_dilation_px,
             "background_method": background_method,
         },
-        "ori_url": f'/input/{inp.replace(UPLOAD_DIR + "/", "")}',
+        "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
         "svg_out": svg_out,
         "png_out": png_out,
         "status": "queued",
