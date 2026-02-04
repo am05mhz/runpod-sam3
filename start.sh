@@ -116,7 +116,9 @@ setup_layeredsvg() {
     pip install --upgrade --no-cache-dir -r requirements.txt
     mkdir -p LayeredVectorization/checkpoints
     cd LayeredVectorization/checkpoints
-    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+    if [ ! -f "sam_vit_h_4b8939.pth" ]; then
+        wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+    fi
 }
 
 setup_bezier() {
