@@ -233,8 +233,8 @@ def run_vectorization(run_id, **kwargs):
                 return {
                     'status': 'completed',
                     'n_layers': result['n_layers'],
-                    'result_svg': final_svg.replace(abs_result_dir + '/', '') if os.path.exists(final_svg) else None,
-                    'result_png': fullsize_png.replace(abs_result_dir + '/', '') if os.path.exists(fullsize_png) else None,
+                    'result_svg': final_svg if os.path.exists(final_svg) else None,
+                    'result_png': fullsize_png if os.path.exists(fullsize_png) else None,
                 }
         else:
             if __name__ == "__main__":

@@ -2,17 +2,17 @@ from gsplat.project_gaussians_2d_scale_rot import project_gaussians_2d_scale_rot
 from torch.optim.lr_scheduler import LambdaLR
 from gsplat.rasterize_sum import rasterize_gaussians_sum
 from gsplat.rasterize import  rasterize_gaussians
-from .utils import *
+from utils import *
 import torch
 import torch.nn as nn
 import numpy as np
 import math
-from .optimizer import Adan
+from optimizer import Adan
 import matplotlib.pyplot as plt
 import time
 import matplotlib.patches as patches
 from torchvision.ops import box_iou
-from .sh_utils import eval_sh
+from sh_utils import eval_sh
 import torch.nn.functional as F
 import random
 import torch.distributions as dist

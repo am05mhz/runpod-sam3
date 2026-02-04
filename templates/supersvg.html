@@ -347,13 +347,13 @@
         </div>
 
         <div class="options">
-            <div class="option-group toggle-container" style="display: none;">
+            <!-- <div class="option-group toggle-container" style="display: none;">
                 <label>Use Ollama AI Detection:</label>
                 <label class="toggle">
                     <input type="checkbox" id="use-ollama">
                     <span class="toggle-slider"></span>
                 </label>
-            </div>
+            </div> -->
 
             <div class="option-group">
                 <label for="quality">Quality:</label>
@@ -490,11 +490,11 @@
             formData.append('file', file);
 
             // Add options
-            formData.append('use_ollama', useOllama.checked ? 'true' : 'false');
+            // formData.append('use_ollama', useOllama.checked ? 'true' : 'false');
             formData.append('conf_thresh', document.getElementById('conf-thresh').value);
             formData.append('num_rounds', document.getElementById('num-rounds').value);
             formData.append('quality', document.getElementById('quality').value);
-            formData.append('use_labels', document.getElementById('labels').value);
+            formData.append('labels', document.getElementById('labels').value);
 
             // Show loading, hide others
             loading.style.display = 'block';
@@ -548,15 +548,12 @@
 
                         if (status.status === 'completed') {
                             clearInterval(pollTimer);
-                            // Accept either full url or filename
-                            const pngUrl = status.png_url || status.png || status.result_png || status.png_url;
-                            const svgUrl = status.svg_url || status.svg || status.result_svg || status.svg_url;
 
-                            svgPreview.src = pngUrl && pngUrl.startsWith('/') ? pngUrl : (pngUrl ? '/supersvg/output/' + pngUrl : '');
+                            svgPreview.src = status.png_url;
                             previewContainer.style.display = 'grid';
                             loading.style.display = 'none';
-                            if (svgUrl) downloadSvg.href = svgUrl.startsWith('/') ? svgUrl : '/supersvg/output/' + svgUrl;
-                            if (pngUrl) downloadPng.href = pngUrl.startsWith('/') ? pngUrl : '/supersvg/output/' + pngUrl;
+                            if (svgUrl) downloadSvg.href = status.svg_url;
+                            if (pngUrl) downloadPng.href = status.png_url;
                         } else if (status.status === 'error') {
                             clearInterval(pollTimer);
                             loading.style.display = 'none';

@@ -124,7 +124,7 @@ setup_bezier() {
     echo "========================================================"
     echo "installing bezier splatting..."
     echo "========================================================"
-    source /app/venv/bezier/bin/activate
+    source /app/venv/apps/bin/activate
     if [ ! -d "/workspace/apps" ]; then
         mkdir -p /workspace/apps
     fi
@@ -170,12 +170,26 @@ start_supersvg() {
     fi
 }
 
+start_combined() {
+    if [[ $START_COMBINED ]]; then
+        echo ""
+        echo "========================================================"
+        echo "starting combined api..."
+        echo "========================================================"
+        source /app/venv/apps/bin/activate
+        cd /workspace/apps
+        nohup python combined_api.py --port=$COMBINED_PORT > /proc/self/fd/1 2>&1 &
+    else
+        echo "not starting combined api"
+    fi
+}
+
 start_bezier() {
     if [[ $START_BEZIER ]]; then
         echo ""
         echo "========================================================"
         echo "starting bezier splatting..."
-        source /app/venv/bezier/bin/activate
+        source /app/venv/apps/bin/activate
         cd /workspace/apps/bezier
         nohup python server.py --port=$BEZIER_PORT > /proc/self/fd/1 2>&1 &
     else
@@ -225,8 +239,8 @@ echo "Pod Started"
 setup_ssh
 setup_sam3
 setup_supersvg
-setup_bezier
 setup_layeredsvg
+setup_bezier
 setup_combined
 
 case $MODE_TO_RUN in
@@ -237,8 +251,9 @@ case $MODE_TO_RUN in
     pod)
         echo "Running in pod mode"
         start_sam3
-        start_supersvg
-        start_bezier
+        # start_supersvg
+        # start_bezier
+        start_combined
         ;;
     *)
         echo "Invalid MODE_TO_RUN value: $MODE_TO_RUN. Expected 'serverless', 'pod', or 'both'."

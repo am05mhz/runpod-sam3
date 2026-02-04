@@ -610,6 +610,8 @@ def run_bezier_splatting(job_id, image_path, args):
         if __name__ == "__main__":
             jobs[job_id]['status'] = 'processing'
             jobs[job_id]['progress'] = 0
+        else:
+            args = new Args(**args)
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         gt_image = image_path_to_tensor(image_path).to(device)
@@ -705,7 +707,7 @@ def run_bezier_splatting(job_id, image_path, args):
             'status': 'completed',
             'created_at': datetime.now().isoformat(),
             'original_filename': args.image_name,
-            'input_file': jobs[job_id]['input_file'],
+            'input_file': os.path.basename(image_path),
             'result_file': f"{job_id}/{result_filename}",
             'svg_file': f"{job_id}/{svg_filename}",
             'model_file': f"{job_id}/model.pth.tar",
@@ -729,12 +731,23 @@ def run_bezier_splatting(job_id, image_path, args):
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
 
+        if __name__ != "__main__":
+            return {
+                'status': 'completed',
+                'result_png': str(result_path) if os.path.exists(result_path) else None,
+                'result_svg': str(svg_path) if os.path.exists(svg_path) else None,
+            }
+
     except Exception as e:
-        if jobs[job_id] is not None:
+        print(f"Error processing job {job_id}: {traceback.format_exc()}")
+        if __name__ == "__main__":
             jobs[job_id]['status'] = 'failed'
             jobs[job_id]['error'] = str(e)
-
-        print(f"Error processing job {job_id}: {traceback.format_exc()}")
+        else:
+            return {
+                'status': 'failed',
+                'error': str(e)
+            }
 
 def run_continue_training(job_id, original_job_id, additional_iterations, image_path, args):
     """Continue training from a checkpoint"""

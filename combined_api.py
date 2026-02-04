@@ -164,6 +164,13 @@ async def worker_loop(worker_idx: int = 0):
                     job["result"] = result
                     svg = job.get("svg_out")
                     png = job.get("png_out")
+                    if result is not None:
+                        res_svg = result.get("result_svg", None)
+                        res_png = result.get("result_png", None)
+                        if os.path.exists(res_svg):
+                            shutil.copyfile(res_svg, svg)
+                        if os.path.exists(res_png):
+                            shutil.copyfile(res_png, png)
                     if svg and os.path.exists(svg):
                         job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
                     if png and os.path.exists(png):
@@ -185,10 +192,16 @@ async def worker_loop(worker_idx: int = 0):
         finally:
             pass
 
-
 @app.get("/combined_output/{path:path}")
 def serve_combined_output(path: str):
     full = os.path.join(OUTPUT_DIR, path)
+    if not os.path.exists(full):
+        raise HTTPException(status_code=404)
+    return FileResponse(full)
+
+@app.get("/input/{path:path}")
+def serve_input(path: str):
+    full = os.path.join(UPLOAD_DIR, path)
     if not os.path.exists(full):
         raise HTTPException(status_code=404)
     return FileResponse(full)
@@ -306,6 +319,7 @@ async def bezier_upload(
         "callable": "run_bezier_splatting",
         "args": [job_id, inp, {"num_curves": num_curves, "iterations": iterations, "mode": mode}],
         "kwargs": {},
+        "ori_url": f'/input/{inp.replace(UPLOAD_DIR + "/", "")}',
         "svg_out": svg_out,
         "png_out": png_out,
         "status": "queued",
@@ -354,6 +368,7 @@ async def layeredsvg_upload(
             "mask_dilation_px": mask_dilation_px,
             "background_method": background_method,
         },
+        "ori_url": f'/input/{inp.replace(UPLOAD_DIR + "/", "")}',
         "svg_out": svg_out,
         "png_out": png_out,
         "status": "queued",
@@ -371,6 +386,7 @@ async def job_status(job_id: str):
         "job_id": job_id,
         "module": job.get("module"),
         "status": job.get("status"),
+        "ori_url": job.get("ori_url"),
         "svg_url": job.get("svg_url"),
         "png_url": job.get("png_url"),
         "error": job.get("error"),

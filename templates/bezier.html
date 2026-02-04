@@ -666,10 +666,10 @@
                         statusText.textContent = 'Processing complete!';
 
                         // Show results
-                        document.getElementById('original-image').src = `/uploads/${data.input_file}`;
-                        document.getElementById('result-image').src = `/result/${data.result_file}`;
-                        document.getElementById('download-btn').href = `/result/${data.result_file}`;
-                        document.getElementById('download-svg-btn').href = `/result/${data.svg_file}`;
+                        document.getElementById('original-image').src = `${data.ori_url}`;
+                        document.getElementById('result-image').src = `${data.png_url}`;
+                        document.getElementById('download-btn').href = `${data.png_url}`;
+                        document.getElementById('download-svg-btn').href = `${data.svg_url}`;
                         document.getElementById('metric-psnr').textContent = data.final_psnr;
                         document.getElementById('metric-ssim').textContent = data.final_ms_ssim;
                         document.getElementById('metric-time').textContent = data.training_time;
