@@ -430,14 +430,14 @@
         const svgPreview = document.getElementById('svg-preview');
         const downloadSvg = document.getElementById('download-svg');
         const downloadPng = document.getElementById('download-png');
-        const useOllama = document.getElementById('use-ollama');
+        // const useOllama = document.getElementById('use-ollama');
         const labels = document.getElementById('labels');
         const roundsGroup = document.getElementById('rounds-group');
 
         // Toggle rounds visibility based on Ollama setting
-        useOllama.addEventListener('change', () => {
-            roundsGroup.style.display = useOllama.checked ? 'flex' : 'none';
-        });
+        // useOllama.addEventListener('change', () => {
+        //     roundsGroup.style.display = useOllama.checked ? 'flex' : 'none';
+        // });
 
         // Click to browse
         dropZone.addEventListener('click', () => fileInput.click());
