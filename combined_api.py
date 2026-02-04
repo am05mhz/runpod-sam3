@@ -160,7 +160,7 @@ async def worker_loop(worker_idx: int = 0):
 
                     result = await asyncio.to_thread(_call_target)
 
-                    job["status"] = "completed"
+                    job["status"] = result.get("status", "error")
                     job["result"] = result
                     svg = job.get("svg_out")
                     png = job.get("png_out")

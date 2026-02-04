@@ -1064,7 +1064,14 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     print(f"Layers created:")
     print(f"  - background")
     for layer in layers:
-        print(f"  - {layer['label']}: {layer['count']} shapes")
+        print(f"  - {layer['label']}: {layer['count']} shapes")\
+    
+    if __name__ != "__main__":
+        return {
+            'status': 'completed',
+            'total_shapes': total_shapes,
+            'layers': layers
+        }
 
 def process_image(image_path, output_svg_path, output_png_path, max_dim=4096, n_segments=N_SEGMENTS):
     """Process an image by segmenting into superpixels and vectorizing each.
@@ -1189,6 +1196,11 @@ def process_image(image_path, output_svg_path, output_png_path, max_dim=4096, n_
 
     # Render PNG from SVG using CairoSVG
     svg_to_png(output_svg_path, output_png_path)
+
+    if __name__ != "__main__":
+        return {
+            'status': 'completed',
+        }
 
 # ==============================================================================
 # FastAPI ROUTES (converted from Flask)
