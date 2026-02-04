@@ -14,3 +14,4 @@ werkzeug
 opencv-python
 matplotlib
 scikit-image
+depth-anything-3
