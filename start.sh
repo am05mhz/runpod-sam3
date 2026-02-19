@@ -121,6 +121,19 @@ setup_layeredsvg() {
     fi
 }
 
+setup_longcat() {
+    echo ""
+    echo "========================================================"
+    echo "installing longcat..."
+    echo "========================================================"
+    source /app/venv/apps/bin/activate
+    if [ ! -d "/workspace/apps" ]; then
+        mkdir -p /workspace/apps
+    fi
+    cp -r /app/longcat /workspace/apps/
+    cd /workspace/apps/longcat
+}
+
 setup_bezier() {
     echo ""
     echo "========================================================"
@@ -243,6 +256,7 @@ setup_sam3
 setup_supersvg
 setup_layeredsvg
 setup_bezier
+setup_longcat
 setup_combined
 
 case $MODE_TO_RUN in

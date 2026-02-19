@@ -78,7 +78,6 @@ RUN add-apt-repository --yes ppa:deadsnakes/ppa && \
 
 # Create and activate a Python virtual environment
 RUN python3 -m venv /app/venv/apps
-RUN python3 -m venv /app/venv/bezier
 
 # Install Python packages
 RUN source /app/venv/apps/bin/activate
@@ -108,6 +107,7 @@ ADD sam3 $WORKSPACE_DIR/sam3
 ADD bezier $WORKSPACE_DIR/bezier
 ADD supersvg $WORKSPACE_DIR/supersvg
 ADD layeredsvg $WORKSPACE_DIR/layeredsvg
+ADD longcat $WORKSPACE_DIR/longcat
 ADD templates $WORKSPACE_DIR/templates
 COPY combined_api.py $WORKSPACE_DIR/combined_api.py
 COPY common_utils.py $WORKSPACE_DIR/common_utils.py
