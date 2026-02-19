@@ -28,7 +28,6 @@ svgwrite
 svgpathtools
 cssutils
 numba
-torch-tools
 scikit-fmm
 easydict
 python-multipart
