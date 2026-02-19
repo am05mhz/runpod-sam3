@@ -23,11 +23,12 @@ pandas
 scikit-image
 scikit-learn
 
-setuptools
+setuptools<82.0.0
 svgwrite
 svgpathtools
 cssutils
 numba
+visdom
 torch-tools
 scikit-fmm
 easydict
