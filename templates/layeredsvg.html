@@ -3,17 +3,343 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>V11 Layered Vectorization - Editable Layers</title>
+    <title>V13 Layered Vectorization - AI Object Detection</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/layeredsvg.css') }}">
+    <style>
+        /* ===== Keyword Editor ===== */
+        .keyword-editor-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .keyword-editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .keyword-editor-header h3 { margin: 0; }
+        .keyword-editor-preview {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .keyword-editor-preview img {
+            max-width: 100%;
+            max-height: 280px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+        .keyword-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .keyword-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            transition: opacity 0.2s;
+        }
+        .keyword-row.unchecked {
+            opacity: 0.45;
+            background: #f0f0f0;
+        }
+        .keyword-row .keyword-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .keyword-row .keyword-text {
+            flex: 1;
+            min-width: 100px;
+            font-size: 0.95rem;
+            color: #212529;
+        }
+        .keyword-row input[type="text"] {
+            flex: 1;
+            min-width: 120px;
+            padding: 6px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+        }
+        .keyword-row label {
+            font-size: 0.85rem;
+            color: #495057;
+            white-space: nowrap;
+        }
+        .keyword-row input[type="range"] {
+            width: 100px;
+        }
+        .confidence-value {
+            font-size: 0.85rem;
+            font-weight: bold;
+            min-width: 35px;
+            text-align: center;
+            color: #495057;
+        }
+        .btn-remove-keyword {
+            background: #dc3545;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-remove-keyword:hover { background: #c82333; }
+        .keyword-select-actions {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .keyword-select-actions .btn-link {
+            font-size: 0.85rem;
+        }
+        .keyword-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn-add-keyword {
+            background: none;
+            border: 1px dashed #6c757d;
+            color: #6c757d;
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .btn-add-keyword:hover {
+            border-color: #495057;
+            color: #495057;
+        }
+
+        /* ===== Layer Review ===== */
+        .layer-review-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .layer-review-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .layer-review-header h3 { margin: 0; }
+        .layer-review-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .merge-preview-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .merge-preview-container img {
+            max-width: 100%;
+            max-height: 400px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+        }
+        .merge-preview-container p {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        .layer-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .layer-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            cursor: default;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        .layer-card.selected {
+            border-color: #28a745;
+            box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.3);
+        }
+        .layer-card.deselected {
+            opacity: 0.5;
+            border-color: #dc3545;
+        }
+        .layer-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .layer-card-header h4 {
+            margin: 0;
+            font-size: 0.95rem;
+        }
+        .layer-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .layer-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: contain;
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, #fff 0% 50%) 50% / 16px 16px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .layer-card-edit {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        .layer-card-edit input[type="text"] {
+            width: 100%;
+            padding: 4px 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+        }
+        .layer-card-edit .conf-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: #495057;
+        }
+        .layer-card-edit .conf-row input[type="range"] {
+            flex: 1;
+            min-width: 60px;
+        }
+        .layer-card-edit .conf-row .conf-val {
+            font-weight: bold;
+            min-width: 30px;
+            text-align: center;
+        }
+        .layer-meta {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        .layer-meta span {
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .badge-keyword {
+            display: inline-block;
+            background: #007bff;
+            color: #fff;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .badge-remaining {
+            display: inline-block;
+            background: #ffc107;
+            color: #333;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        /* ===== Vectorize options ===== */
+        .vectorize-options {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            border: 1px solid #c8e6c9;
+        }
+        .vectorize-options h4 { margin: 0 0 10px 0; }
+        .vectorize-options .option-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        #vectorize-btn {
+            margin-top: 15px;
+            font-size: 1.1rem;
+            padding: 12px 30px;
+        }
+
+        /* ===== Selection helpers ===== */
+        .select-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-link {
+            background: none;
+            border: none;
+            color: #007bff;
+            cursor: pointer;
+            font-size: 0.9rem;
+            padding: 2px 6px;
+            text-decoration: underline;
+        }
+        .btn-link:hover { color: #0056b3; }
+
+        /* ===== Re-segment actions ===== */
+        .resegment-actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-outline {
+            background: #fff;
+            border: 1px solid #6c757d;
+            color: #495057;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .btn-outline:hover {
+            background: #f8f9fa;
+            border-color: #495057;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Layered Image Vectorization V11</h1>
-            <p>App3 SVG Quality + App8 Layer Editability - Each layer can be moved independently</p>
+            <h1>Layered Image Vectorization V13</h1>
+            <p>AI-powered object detection, segmentation by keyword, then vectorization</p>
         </header>
 
         <main>
+            <!-- Screen 1: Upload -->
             <div class="upload-section">
                 <div id="drop-zone" class="drop-zone">
                     <div class="drop-zone-content">
@@ -23,8 +349,8 @@
                         <p class="drop-zone-text">Drag and drop an image here</p>
                         <p class="drop-zone-subtext">or</p>
                         <button type="button" id="browse-btn" class="btn btn-primary">Browse Files</button>
-                        <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg" hidden>
-                        <p class="file-info">Supported formats: PNG, JPG (max 16MB)</p>
+                        <input type="file" id="file-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp" hidden>
+                        <p class="file-info">Supported formats: PNG, JPG, WebP, BMP (max 50MB)</p>
                     </div>
                     <div id="preview-container" class="preview-container" style="display: none;">
                         <img id="preview-image" src="" alt="Preview">
@@ -33,61 +359,95 @@
                 </div>
 
                 <div id="process-section" class="process-section" style="display: none;">
-                    <div class="quality-selector">
-                        <label for="quality-select">Quality Preset:</label>
-                        <select id="quality-select" class="quality-select">
-                            <option value="fast" selected>Fast (~5 min)</option>
-                            <option value="balanced">Balanced (~10 min)</option>
-                            <option value="balanced+">Balanced (~10 min)</option>
-                            <option value="high">High Quality (~20 min)</option>
-                            <option value="best">Best Quality (~40 min)</option>
-                        </select>
-                        <p class="quality-info" id="quality-info">Fast - 256 paths/layer, quick processing</p>
-                    </div>
-
-                    <div class="layer-options">
-                        <h4>Layer Decomposition Settings</h4>
-                        <div class="option-group">
-                            <label for="max-layers">Max Layers:</label>
-                            <input type="number" id="max-layers" value="10" min="2" max="30" class="option-input">
-                            <span class="option-hint">Limit layers for faster processing</span>
-                        </div>
-                        <div class="option-group">
-                            <label for="depth-clusters">Depth Clusters:</label>
-                            <select id="depth-clusters" class="option-input">
-                                <option value="2">2 (Foreground/Background)</option>
-                                <option value="3" selected>3 (Near/Mid/Far)</option>
-                                <option value="4">4 (Detailed depth)</option>
-                            </select>
-                        </div>
-                        <div class="option-group">
-                            <label for="background-method">Background Detection:</label>
-                            <select id="background-method" class="option-input">
-                                <option value="depth" selected>Depth (furthest from camera)</option>
-                                <option value="area">Area (Largest mask)</option>
-                            </select>
-                            <span class="option-hint">How to identify the background layer</span>
-                        </div>
-                    </div>
-
-                    <button type="button" id="process-btn" class="btn btn-success">Start Layered Vectorization</button>
+                    <button type="button" id="detect-btn" class="btn btn-success">Detect Objects</button>
+                    <p class="quality-info">AI vision detects objects in the image (~30s). You'll edit keywords before segmentation.</p>
                 </div>
             </div>
 
+            <!-- Progress Section (shared across phases) -->
             <div id="progress-section" class="progress-section" style="display: none;">
                 <div class="progress-container">
                     <div class="progress-header">
-                        <h3>Processing Layers</h3>
+                        <h3 id="progress-title">Processing</h3>
                         <span id="progress-percentage">0%</span>
                     </div>
                     <div class="progress-bar">
                         <div id="progress-fill" class="progress-fill"></div>
                     </div>
                     <p id="progress-message" class="progress-message">Starting...</p>
-                    <p id="time-estimate" class="time-estimate"></p>
                 </div>
             </div>
 
+            <!-- Screen 2: Keyword Editor -->
+            <div id="keyword-editor-section" class="keyword-editor-section" style="display: none;">
+                <div class="keyword-editor-header">
+                    <h3>Detected Objects (<span id="keyword-checked-count">0</span> / <span id="keyword-count">0</span> selected)</h3>
+                </div>
+                <p style="color: #6c757d; font-size: 0.9rem; margin-bottom: 10px;">
+                    Tick the keywords you want to segment. Adjust per-keyword confidence below (lower = more aggressive). Then click "Segment Selected".
+                </p>
+                <div class="keyword-select-actions">
+                    <button type="button" class="btn-link" id="kw-select-all-btn">Select All</button>
+                    <button type="button" class="btn-link" id="kw-deselect-all-btn">Deselect All</button>
+                </div>
+
+                <div id="keyword-list" class="keyword-list"></div>
+
+                <div class="keyword-actions">
+                    <button type="button" id="add-keyword-btn" class="btn-add-keyword">+ Add Keyword</button>
+                    <div style="flex:1"></div>
+                    <button type="button" id="segment-btn" class="btn btn-success">Segment Selected (0)</button>
+                </div>
+            </div>
+
+            <!-- Screen 3: Layer Review -->
+            <div id="layer-review-section" class="layer-review-section" style="display: none;">
+                <div class="layer-review-header">
+                    <h3>Review Layers (<span id="selected-count">0</span> / <span id="total-count">0</span> selected)</h3>
+                    <div class="select-actions">
+                        <button type="button" class="btn-link" id="select-all-btn">Select All</button>
+                        <button type="button" class="btn-link" id="deselect-all-btn">Deselect All</button>
+                    </div>
+                </div>
+
+                <div class="merge-preview-container" id="merge-preview-container" style="display: none;">
+                    <p><strong>Merge Preview</strong> (all layers composited)</p>
+                    <img id="merge-preview-img" src="" alt="Merge Preview" style="cursor:pointer;" onclick="openLightbox(this.src)">
+                </div>
+
+                <div id="layer-gallery" class="layer-gallery"></div>
+
+                <div class="add-keyword-review" style="display:flex; gap:8px; align-items:center; margin:12px 0;">
+                    <input type="text" id="new-keyword-input" placeholder="Add new keyword..." style="flex:1; padding:6px 10px; border:1px solid #ccc; border-radius:4px; font-size:0.95rem;">
+                    <input type="number" id="new-keyword-conf" value="0.2" min="0.05" max="0.9" step="0.05" style="width:70px; padding:6px; border:1px solid #ccc; border-radius:4px; font-size:0.95rem;" title="Confidence">
+                    <button type="button" id="add-keyword-review-btn" class="btn-add-keyword" style="white-space:nowrap;">+ Add</button>
+                </div>
+
+                <div class="resegment-actions">
+                    <button type="button" id="resegment-btn" class="btn-outline">Re-segment with Changes</button>
+                    <button type="button" id="redetect-btn" class="btn-outline">Re-detect Keywords</button>
+                </div>
+
+                <div class="vectorize-options">
+                    <h4>Vectorization Settings</h4>
+                    <div class="option-row">
+                        <label for="quality-select">Quality:</label>
+                        <select id="quality-select" class="quality-select">
+                            <option value="fast" selected>Fast (~5 min/layer)</option>
+                            <option value="balanced">Balanced (~10 min/layer)</option>
+                            <option value="balanced_plus">Balanced+ (~12 min/layer)</option>
+                            <option value="medium">Medium (~15 min/layer)</option>
+                            <option value="high">High (~20 min/layer)</option>
+                            <option value="best">Best (~40 min/layer)</option>
+                        </select>
+                    </div>
+                    <button type="button" id="vectorize-btn" class="btn btn-success" disabled>
+                        Vectorize Selected Layers (0)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Screen 4: Results -->
             <div id="result-section" class="result-section" style="display: none;">
                 <h2>Results</h2>
                 <div class="result-summary" id="result-summary"></div>
@@ -108,6 +468,11 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Image lightbox modal -->
+    <div id="image-lightbox" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; cursor:pointer; align-items:center; justify-content:center;">
+        <img id="lightbox-img" style="max-width:90%; max-height:90%; object-fit:contain; border-radius:8px; box-shadow:0 0 40px rgba(0,0,0,0.5);">
     </div>
 
     <script src="{{ url_for('static', path='js/layeredsvg.js') }}"></script>

@@ -245,9 +245,9 @@ def svg_optimize_img_visual_v11(device, shapes, shape_groups,
             svg_optimizer.step()
 
             # Save every 10 iterations + final
-            # if i % save_interval == 0 or i == num_iters - 1:
-            #     pydiffvg.save_svg(f"{file_save_path}/{count}.svg",
-            #                       img_width, img_height, shapes, shape_groups)
+            if i % save_interval == 0 or i == num_iters - 1:
+                pydiffvg.save_svg(f"{file_save_path}/{count}.svg",
+                                  img_width, img_height, shapes, shape_groups)
             count += 1
             pbar.update(1)
     return shapes, shape_groups, count

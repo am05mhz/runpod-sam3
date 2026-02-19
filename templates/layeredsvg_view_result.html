@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>V11 Result - {{ run_id }}</title>
+    <title>V13 Result - {{ run_id }}</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
     <style>
         .layer-gallery {
@@ -26,7 +26,7 @@
             max-width: 100%;
             max-height: 200px;
             margin-bottom: 10px;
-            background: #fff;
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, #fff 0% 50%) 50% / 16px 16px;
             border: 1px solid #dee2e6;
         }
         .layer-actions {
@@ -56,6 +56,29 @@
         .info-box li {
             margin-bottom: 5px;
         }
+        .badge-keyword {
+            display: inline-block;
+            background: #007bff;
+            color: #fff;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .badge-remaining {
+            display: inline-block;
+            background: #ffc107;
+            color: #333;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .layer-meta {
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
@@ -63,15 +86,15 @@
         <header>
             <div class="header-nav">
                 <a href="/" class="btn-back">Back to Home</a>
-                <h1>V11 Bezier Splatting Result</h1>
+                <h1>V13 Result</h1>
             </div>
             <p class="run-id">Run ID: {{ run_id }}</p>
         </header>
 
         <main>
             <div class="info-box">
-                <h3>Bezier Splatting Quality SVG</h3>
-                <p>Your image has been vectorized with Bezier Splatting (~25 dB PSNR per layer). Each layer is a separate group in the SVG that can be:</p>
+                <h3>Layered Vectorization Result</h3>
+                <p>Your image was segmented by text-prompted keywords, then each layer was individually vectorized. Each layer is a separate group in the SVG that can be:</p>
                 <ul>
                     <li><strong>Moved</strong> - Drag layers to new positions</li>
                     <li><strong>Scaled</strong> - Resize individual objects</li>
@@ -82,56 +105,77 @@
             </div>
 
             <div class="details-grid">
-                {% if files.input %}
+                {% if input_file %}
                 <div class="detail-card">
                     <h3>Input Image</h3>
-                    <img src="{{ url_for('serve_result', path=files.input) }}" alt="Input">
-                    <a href="{{ url_for('serve_result', path=files.input) }}" download class="btn btn-small">Download</a>
+                    <img src="{{ url_for('serve_result', filepath=run_id + '/' + input_file) }}" alt="Input">
+                    <a href="{{ url_for('serve_result', filepath=run_id + '/' + input_file) }}" download class="btn btn-small">Download</a>
                 </div>
                 {% endif %}
 
-                {% if files.final_svg %}
+                {% if has_svg or has_fullsize_svg %}
                 <div class="detail-card">
                     <h3>Final SVG (All Layers)</h3>
                     <p class="info-text">Contains all layers as editable groups</p>
-                    <object data="{{ url_for('serve_result', path=files.final_svg) }}" type="image/svg+xml" class="svg-display">
+                    {% if has_fullsize_svg %}
+                    <object data="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final_fullsize.svg') }}" type="image/svg+xml" class="svg-display">
                         Your browser does not support SVG
                     </object>
-                    <a href="{{ url_for('serve_result', path=files.final_svg) }}" download class="btn btn-small">Download SVG</a>
+                    <a href="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final_fullsize.svg') }}" download class="btn btn-small">Download Full-Size SVG</a>
+                    {% elif has_svg %}
+                    <object data="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final.svg') }}" type="image/svg+xml" class="svg-display">
+                        Your browser does not support SVG
+                    </object>
+                    <a href="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final.svg') }}" download class="btn btn-small">Download SVG</a>
+                    {% endif %}
                 </div>
                 {% endif %}
 
-                {% if files.final_png %}
+                {% if has_png or has_fullsize_png %}
                 <div class="detail-card">
                     <h3>Final PNG Preview</h3>
                     <p class="info-text">Rasterized composite of all layers</p>
-                    <img src="{{ url_for('serve_result', path=files.final_png) }}" alt="Final PNG">
-                    <a href="{{ url_for('serve_result', path=files.final_png) }}" download class="btn btn-small">Download PNG</a>
+                    {% if has_fullsize_png %}
+                    <img src="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final_fullsize.png') }}" alt="Final PNG" class="svg-display">
+                    <a href="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final_fullsize.png') }}" download class="btn btn-small">Download Full-Size PNG</a>
+                    {% elif has_png %}
+                    <img src="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final.png') }}" alt="Final PNG" class="svg-display">
+                    <a href="{{ url_for('serve_result', filepath=run_id + '/workdir/' + run_id + '/final.png') }}" download class="btn btn-small">Download PNG</a>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>
 
-            {% if files.layer_svgs %}
+            {% if layers %}
             <div class="layer-section">
-                <h2>Individual Layers ({{ files.layer_svgs|length }} layers)</h2>
+                <h2>Individual Layers ({{ layers|length }} layers)</h2>
                 <p>Each layer can be downloaded separately for individual editing.</p>
 
                 <div class="layer-gallery">
-                    {% for i in range(files.layer_svgs|length) %}
+                    {% for layer in layers %}
                     <div class="layer-card">
-                        <h4>Layer {{ i }}</h4>
+                        <h4>
+                            {{ layer.keyword or ('Layer ' ~ loop.index0) }}
+                            {% if layer.is_remaining %}
+                            <span class="badge-remaining">Remaining</span>
+                            {% else %}
+                            <span class="badge-keyword">{{ "conf: %.2f"|format(layer.confidence|default(0.2)) }}</span>
+                            {% endif %}
+                        </h4>
+                        {% if layer.area_pct is defined %}
+                        <div class="layer-meta">Area: {{ "%.1f"|format(layer.area_pct) }}%</div>
+                        {% endif %}
 
-                        {% if files.layer_pngs and i < files.layer_pngs|length %}
-                        <img src="{{ url_for('serve_result', path=files.layer_pngs[i]) }}" alt="Layer {{ i }}" class="layer-preview">
+                        {% if layer.preview_url %}
+                        <img src="{{ url_for('serve_layer_asset', run_id=run_id, filename=layer.preview_url) }}" alt="{{ layer.keyword }}" class="layer-preview">
                         {% endif %}
 
                         <div class="layer-actions">
-                            <a href="{{ url_for('serve_result', path=files.layer_svgs[i]) }}" download class="btn btn-small">Download SVG</a>
-                            {% if files.layer_pngs and i < files.layer_pngs|length %}
-                            <a href="{{ url_for('serve_result', path=files.layer_pngs[i]) }}" download class="btn btn-small btn-secondary">Download PNG</a>
+                            {% if layer.svg_path %}
+                            <a href="{{ url_for('serve_result', filepath=run_id + '/' + layer.svg_path) }}" download class="btn btn-small">Download SVG</a>
                             {% endif %}
-                            {% if files.layer_masks and i < files.layer_masks|length %}
-                            <a href="{{ url_for('serve_result', path=files.layer_masks[i]) }}" download class="btn btn-small btn-secondary">Download Mask</a>
+                            {% if layer.mask_url %}
+                            <a href="{{ url_for('serve_layer_asset', run_id=run_id, filename=layer.mask_url) }}" download class="btn btn-small btn-secondary">Download Mask</a>
                             {% endif %}
                         </div>
                     </div>
@@ -141,7 +185,7 @@
             {% endif %}
 
             <div class="actions">
-                <a href="/" class="btn btn-primary">Process Another Image</a>
+                <a href="/longcat" class="btn btn-primary">Process Another Image</a>
             </div>
         </main>
     </div>

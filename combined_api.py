@@ -24,6 +24,7 @@ import queue
 import argparse
 import inspect
 from contextlib import asynccontextmanager
+from longcat import utils as longcat_utils
 
 # local common utils
 from common_utils import (
@@ -105,20 +106,28 @@ async def worker_loop(worker_idx: int = 0):
                 try:
                     module_key = job.get("module")
                     func_name = job.get("callable")
-                    module_path = COMPONENT_PATHS.get(module_key)
-                    if not module_path or not os.path.exists(module_path):
-                        raise RuntimeError(f"Module path not found for '{module_key}'")
 
-                    module = import_module_from_path(f"{module_key}_mod", module_path)
+                    if module_key == "longcat":
+                        fn = getattr(longcat_utils, func_name, None)
 
-                    fn = getattr(module, func_name, None)
-                    if fn is None:
-                        for alt in ("process_image_sam3", "process_image", "run_bezier_splatting", "run_vectorization"):
-                            if hasattr(module, alt):
-                                fn = getattr(module, alt)
-                                break
-                    if fn is None:
-                        raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
+                        if fn is None:
+                            raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
+
+                    else:
+                        module_path = COMPONENT_PATHS.get(module_key)
+                        if not module_path or not os.path.exists(module_path):
+                            raise RuntimeError(f"Module path not found for '{module_key}'")
+
+                        module = import_module_from_path(f"{module_key}_mod", module_path)
+
+                        fn = getattr(module, func_name, None)
+                        if fn is None:
+                            for alt in ("process_image_sam3", "process_image", "run_bezier_splatting", "run_vectorization"):
+                                if hasattr(module, alt):
+                                    fn = getattr(module, alt)
+                                    break
+                        if fn is None:
+                            raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
 
                     module_args = job.get("args", [])
                     module_kwargs = job.get("kwargs", {})
@@ -161,26 +170,32 @@ async def worker_loop(worker_idx: int = 0):
                                     return fn(*module_args)
 
                     result = await asyncio.to_thread(_call_target)
-
                     job["result"] = result
-                    svg = job.get("svg_out")
-                    png = job.get("png_out")
-                    if result is not None:
-                        job["status"] = result.get("status", "error")
-                        res_svg = result.get("result_svg", None)
-                        res_png = result.get("result_png", None)
-                        if res_svg is not None and os.path.exists(res_svg):
-                            shutil.copyfile(res_svg, svg)
-                        if res_png is not None and os.path.exists(res_png):
-                            shutil.copyfile(res_png, png)
 
-                    if svg and os.path.exists(svg):
-                        job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
+                    if module_key == "longcat":
+                        if result is not None:
+                            job["status"] = result.get("status", "error")
+                            job["png_out"] = result.get("output", None)
+
                     else:
-                        job["status"] = "error" if svg is None else "completed"
+                        svg = job.get("svg_out")
+                        png = job.get("png_out")
+                        if result is not None:
+                            job["status"] = result.get("status", "error")
+                            res_svg = result.get("result_svg", None)
+                            res_png = result.get("result_png", None)
+                            if res_svg is not None and os.path.exists(res_svg):
+                                shutil.copyfile(res_svg, svg)
+                            if res_png is not None and os.path.exists(res_png):
+                                shutil.copyfile(res_png, png)
 
-                    if png and os.path.exists(png):
-                        job["png_url"] = f"/combined_output/{os.path.basename(png)}"
+                        if svg and os.path.exists(svg):
+                            job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
+                        else:
+                            job["status"] = "error" if svg is None else "completed"
+
+                        if png and os.path.exists(png):
+                            job["png_url"] = f"/combined_output/{os.path.basename(png)}"
 
                 except Exception as e:
                     job["status"] = "error"
@@ -223,6 +238,70 @@ async def bezier_home(request: Request):
 @app.get("/layeredsvg")
 async def layeredsvg_home(request: Request):
     return templates.TemplateResponse("layeredsvg.html", {"request": request})
+
+@app.get("/longcat")
+async def longcat_home(request: Request):
+    return templates.TemplateResponse("longcat.html", {"request": request})
+
+@app.get("/longcat/edit")
+async def longcat_home(request: Request):
+    return templates.TemplateResponse("longcat_edit.html", {"request": request})
+
+@app.post("/longcat/edit")
+async def longcat_edit(
+    request: Request,
+    image: UploadFile = File(...),
+    prompt: str = Form(...),
+    seed: int = Form(42)
+):
+    if not image.filename:
+        raise HTTPException(status_code=400, detail="No image supplied")
+
+    # Load uploaded image
+    raw = await image.read()
+    input_img = Image.open(io.BytesIO(raw)).convert("RGB")
+
+    uid = make_id("cat")
+    job_id = uid
+    JOBS[job_id] = {
+        "module": "longcat",
+        "callable": "edit",
+        "args": [input_img, prompt, seed],
+        "kwargs": {},
+        # "svg_out": None,
+        # "png_out": None,
+        "status": "queued",
+        "created_at": time.time(),
+    }
+    JOB_QUEUE.put(job_id)
+    
+    return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
+
+@app.get("/longcat/generate")
+async def longcat_home(request: Request):
+    return templates.TemplateResponse("longcat_generate.html", {"request": request})
+
+@app.post("/generate")
+async def longcat_generate(
+    request: Request,
+    prompt: str = Form(...),
+    seed: int = Form(42)
+):
+    uid = make_id("cat")
+    job_id = uid
+    JOBS[job_id] = {
+        "module": "longcat",
+        "callable": "generate",
+        "args": [prompt, seed],
+        "kwargs": {},
+        # "svg_out": None,
+        # "png_out": None,
+        "status": "queued",
+        "created_at": time.time(),
+    }
+    JOB_QUEUE.put(job_id)
+    
+    return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 @app.get("/layeredsvg/view/{run_id}")
 async def layeredsvg_view(request: Request, run_id: str):

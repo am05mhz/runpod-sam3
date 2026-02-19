@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>Generate</title></head>
+<body>
+    <h1>Generate Image</h1>
+    <form action="/longcat/generate" method="post">
+        <textarea name="prompt" placeholder="Describe image..." required></textarea><br>
+        <input type="number" name="seed" value="42"><br>
+        <button type="submit">Generate</button>
+    </form>
+
+    {% if image_hex %}
+        <h2>Result for: "{{ prompt }}"</h2>
+        <img src="data:image/png;base64,{{ image_hex | safe }}">
+    {% endif %}
+</body>
+</html>

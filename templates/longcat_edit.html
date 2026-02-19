@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>Edit</title></head>
+<body>
+    <h1>Edit Image</h1>
+    <form action="/longcat/edit" method="post" enctype="multipart/form-data">
+        <input type="file" name="image" accept="image/*" required><br>
+        <textarea name="prompt" placeholder="Edit instructions..." required></textarea><br>
+        <input type="number" name="seed" value="42"><br>
+        <button type="submit">Edit</button>
+    </form>
+
+    {% if image_hex %}
+        <h2>Edited: "{{ prompt }}"</h2>
+        <img src="data:image/png;base64,{{ image_hex | safe }}">
+    {% endif %}
+</body>
+</html>
