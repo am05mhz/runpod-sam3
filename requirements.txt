@@ -31,5 +31,4 @@ numba
 torch-tools
 scikit-fmm
 easydict
-#visdom
 python-multipart
