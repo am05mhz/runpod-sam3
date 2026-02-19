@@ -91,6 +91,7 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt ./
 COPY requirements--pre.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --upgrade setuptools && \
     pip install --no-cache-dir --upgrade huggingface_hub && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir --pre -r requirements--pre.txt
