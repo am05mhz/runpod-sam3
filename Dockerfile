@@ -94,6 +94,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir "setuptools<82.0.0" && \
     pip install --no-cache-dir --upgrade huggingface_hub && \
     pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.txt && \
     pip install --no-cache-dir --pre -r requirements--pre.txt
 
 # RUN git clone https://github.com/facebookresearch/sam3.git && \

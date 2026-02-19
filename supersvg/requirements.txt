@@ -15,7 +15,7 @@ numba
 torch-tools
 scikit-fmm
 easydict
-visdom
+#visdom
 opencv-python
 lpips
 cairosvg
