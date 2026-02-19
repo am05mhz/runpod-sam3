@@ -13,7 +13,7 @@ Requires: conda activate lv13
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -359,7 +359,7 @@ if __name__ == "__main__":
     @app.post("/upload")
     async def upload_file(file: UploadFile = File(...)):
     if file is None or file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        return JSONResponse(status_code=400, content={"error": "No selected file"})
 
     if file and allowed_file(file.filename):
         run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -381,14 +381,14 @@ if __name__ == "__main__":
 
         return {'success': True, 'run_id': run_id, 'filename': filename}
 
-    raise HTTPException(status_code=400, detail="Invalid file type")
+    return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 
     @app.post("/detect_keywords/{run_id}")
     async def detect_keywords(run_id: str):
         if run_id not in processing_status:
-            raise HTTPException(status_code=400, detail="Invalid run ID")
+            return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
         if run_id in processing_threads:
-            raise HTTPException(status_code=400, detail="Already processing")
+            return JSONResponse(status_code=400, content={"error": "Already processing"})
 
         thread = threading.Thread(target=run_keyword_detection, args=(run_id,))
         thread.daemon = True
@@ -397,18 +397,21 @@ if __name__ == "__main__":
 
         return {'success': True, 'message': 'Keyword detection started'}
 
+    class JsonKeyword(BaseModel):
+        keywords: str
+
     @app.post("/segment/{run_id}")
-    async def segment_keywords(run_id: str, keywords: str):
+    async def segment_keywords(run_id: str, params: JsonKeyword):
         if run_id not in processing_status:
-            raise HTTPException(status_code=400, detail="Invalid run ID")
+            return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
         if run_id in processing_threads:
-            raise HTTPException(status_code=400, detail="Already processing")
+            return JSONResponse(status_code=400, content={"error": "Already processing"})
 
         if not keywords:
-            raise HTTPException(status_code=400, detail="No keywords provided")
+            return JSONResponse(status_code=400, content={"error": "No keywords provided"})
 
         # Store keywords with confidence for the background thread
-        processing_status[run_id]['keywords_with_conf'] = keywords
+        processing_status[run_id]['keywords_with_conf'] = params.keywords
 
         thread = threading.Thread(target=run_segmentation, args=(run_id,))
         thread.daemon = True
@@ -420,11 +423,11 @@ if __name__ == "__main__":
     @app.get("/layers/{run_id}")
     async def get_layers(run_id: str):
         if run_id not in processing_status:
-            raise HTTPException(status_code=400, detail="Invalid run ID")
+            return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
 
         status = processing_status[run_id]
         if status['status'] not in ('layers_ready', 'vectorizing', 'completed'):
-            raise HTTPException(status_code=400, detail="Layers not ready yet")
+            return JSONResponse(status_code=400, content={"error": "Layers not ready yet"})
 
         return {
             'layers': status.get('layers_info', []),
@@ -442,25 +445,25 @@ if __name__ == "__main__":
 
         full_path = os.path.join(layers_dir, filename)
         if not os.path.exists(full_path):
-            raise HTTPException(status_code=404, detail="Not found")
+            return JSONResponse(status_code=404, content={"error": "Not found"})
         return FileResponse(full_path)
 
-    class RunData(BaseModel):
-        selected_layers: List[int] = []
+    class JsonLayerConfig(BaseModel):
+        selected_layers: list[int] = []
         quality: str = "fast"
 
     @app.post("/vectorize/{run_id}")
-    async def vectorize_confirmed(run_id: str, data: RunData):
+    async def vectorize_confirmed(run_id: str, params: JsonLayerConfig):
         if run_id not in processing_status:
-            raise HTTPException(status_code=400, detail="Invalid run ID")
+            return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
         if run_id in processing_threads:
-            raise HTTPException(status_code=400, detail="Already processing")
+            return JSONResponse(status_code=400, content={"error": "Already processing"})
 
         if not selected_layers:
-            raise HTTPException(status_code=400, detail="No layers selected")
+            return JSONResponse(status_code=400, content={"error": "No layers selected"})
 
-        processing_status[run_id]['selected_layers'] = selected_layers
-        processing_status[run_id]['quality'] = quality
+        processing_status[run_id]['selected_layers'] = params.selected_layers
+        processing_status[run_id]['quality'] = params.quality
 
         thread = threading.Thread(target=run_vectorization, args=(run_id,))
         thread.daemon = True
@@ -472,7 +475,7 @@ if __name__ == "__main__":
     @app.get("/status/{run_id}")
     async def get_status(run_id: str):
         if run_id not in processing_status:
-            raise HTTPException(status_code=404, detail="Invalid run ID")
+            return JSONResponse(status_code=404, content={"error": "Invalid run ID"})
         status = processing_status[run_id]
         resp = {
             'status': status['status'],
@@ -523,14 +526,14 @@ if __name__ == "__main__":
     async def serve_result(file_path: str):
         full_path = os.path.join(app.config['RESULTS_FOLDER'], file_path)
         if not os.path.exists(full_path):
-            raise HTTPException(status_code=404, detail="File not found")
+            return JSONResponse(status_code=404, content={"error": "File not found"})
         return FileResponse(full_path)
 
     @app.get("/view/{run_id}")
     async def view_result(request: Request, run_id: str):
         run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
         if not os.path.exists(run_folder):
-            raise HTTPException(status_code=404, detail="Run not found")
+            return JSONResponse(status_code=404, content={"error": "Run not found"})
 
         # Gather result file info
         workdir = os.path.join(run_folder, 'workdir', run_id)
