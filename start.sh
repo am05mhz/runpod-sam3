@@ -69,7 +69,9 @@ setup_supersvg() {
     if [ ! -d "/workspace/apps/supersvg" ]; then
         git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     fi
-    rm -r DiffVG
+    if [ ! -d "/workspace/apps/supersvg/DiffVG" ]; then
+        rm -r /workspace/apps/supersvg/DiffVG
+    fi
     if [ ! -d "diffvg" ]; then
         git clone https://github.com/BachiLi/diffvg.git
     fi
