@@ -74,7 +74,7 @@ setup_supersvg() {
     pip install --upgrade --no-cache-dir -r requirements.txt
     cd DiffVG
     git submodule update --init --recursive
-    python setup.py install
+    pip install .
 }
 
 setup_combined() {
@@ -111,7 +111,7 @@ setup_layeredsvg() {
     cd diffvg
     git submodule update --init --recursive
     cp -r /app/layeredsvg /workspace/apps/
-    python setup.py install
+    pip install .
     cd /workspace/apps/layeredsvg
     pip install --upgrade --no-cache-dir -r requirements.txt
     mkdir -p LayeredVectorization/checkpoints
