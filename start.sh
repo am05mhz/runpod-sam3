@@ -74,7 +74,7 @@ setup_supersvg() {
     pip install --upgrade --no-cache-dir -r requirements.txt
     cd DiffVG
     git submodule update --init --recursive
-    pip install .
+    pip install --no-build-isolation .
 }
 
 setup_combined() {
