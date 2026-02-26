@@ -31,3 +31,4 @@ numba
 scikit-fmm
 easydict
 python-multipart
+poetry
