@@ -70,7 +70,7 @@ RUN add-apt-repository --yes ppa:deadsnakes/ppa && \
     apt-get install --yes --quiet --no-install-recommends \
     software-properties-common \
     gpg-agent \
-    build-essential \
+    build-essential cmake \
     apt-utils \
     ca-certificates \
     curl \

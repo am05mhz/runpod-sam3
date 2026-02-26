@@ -69,10 +69,14 @@ setup_supersvg() {
     if [ ! -d "/workspace/apps/supersvg" ]; then
         git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
     fi
+    rm -r DiffVG
+    if [ ! -d "diffvg" ]; then
+        git clone https://github.com/BachiLi/diffvg.git
+    fi
     cp -r /app/supersvg /workspace/apps/
     cd supersvg
     pip install --upgrade --no-cache-dir -r requirements.txt
-    cd DiffVG
+    cd diffvg
     git submodule update --init --recursive
     pip install --no-build-isolation .
 }
@@ -111,7 +115,7 @@ setup_layeredsvg() {
     cd diffvg
     git submodule update --init --recursive
     cp -r /app/layeredsvg /workspace/apps/
-    pip install .
+    pip install --no-build-isolation .
     cd /workspace/apps/layeredsvg
     pip install --upgrade --no-cache-dir -r requirements.txt
     mkdir -p LayeredVectorization/checkpoints
