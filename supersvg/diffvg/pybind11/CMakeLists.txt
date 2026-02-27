@@ -16,11 +16,6 @@ else()
   cmake_policy(VERSION 3.18)
 endif()
 
-# default values
-set(PYBIND11_VERSION_MAJOR, "2")
-set(PYBIND11_VERSION_MINOR, "6")
-set(PYBIND11_VERSION_PATCH, "dev0")
-
 # Extract project version from source
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/pybind11/detail/common.h"
      pybind11_version_defines REGEX "#define PYBIND11_VERSION_(MAJOR|MINOR|PATCH) ")
@@ -39,7 +34,7 @@ string(REGEX MATCH "[0-9]+" PYBIND11_VERSION_PATCH "${PYBIND11_VERSION_PATCH}")
 project(
   pybind11
   LANGUAGES CXX
-  VERSION "${PYBIND11_VERSION_MAJOR}.${PYBIND11_VERSION_MINOR}.${PYBIND11_VERSION_PATCH}")
+  VERSION "2.6.dev0")
 
 # Standard includes
 include(GNUInstallDirs)
