@@ -34,7 +34,7 @@ string(REGEX MATCH "[0-9]+" PYBIND11_VERSION_PATCH "${PYBIND11_VERSION_PATCH}")
 project(
   pybind11
   LANGUAGES CXX
-  VERSION "2.6.dev0")
+  VERSION "2.6.0")
 
 # Standard includes
 include(GNUInstallDirs)
