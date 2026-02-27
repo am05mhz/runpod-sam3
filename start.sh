@@ -73,14 +73,15 @@ setup_supersvg() {
         rm -r /workspace/apps/supersvg/DiffVG
     fi
     cd supersvg
+    git submodule update --init --recursive
     if [ ! -d "diffvg" ]; then
         git clone https://github.com/BachiLi/diffvg.git
     fi
-    git submodule update --init --recursive
-    cp -r /app/supersvg /workspace/apps/
-    pip install --upgrade --no-cache-dir -r requirements.txt
     cd diffvg
+    cp -r /app/supersvg /workspace/apps/
     pip install --no-build-isolation .
+    cd ..
+    pip install --upgrade --no-cache-dir -r requirements.txt
 }
 
 setup_combined() {
