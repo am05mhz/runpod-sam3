@@ -78,6 +78,7 @@ setup_supersvg() {
         git clone https://github.com/BachiLi/diffvg.git
     fi
     cd diffvg
+    git submodule update --init --recursive
     cp -r /app/supersvg /workspace/apps/
     python setup.py install
     cd ..
