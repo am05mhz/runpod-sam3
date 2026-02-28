@@ -358,30 +358,30 @@ if __name__ == "__main__":
 
     @app.post("/upload")
     async def upload_file(file: UploadFile = File(...)):
-    if file is None or file.filename == '':
-        return JSONResponse(status_code=400, content={"error": "No selected file"})
+        if file is None or file.filename == '':
+            return JSONResponse(status_code=400, content={"error": "No selected file"})
 
-    if file and allowed_file(file.filename):
-        run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-        run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
-        os.makedirs(run_folder, exist_ok=True)
+        if file and allowed_file(file.filename):
+            run_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            run_folder = os.path.join(app.config['RESULTS_FOLDER'], run_id)
+            os.makedirs(run_folder, exist_ok=True)
 
-        filename = f"input_{file.filename}"
-        filepath = os.path.join(run_folder, filename)
-        file.save(filepath)
+            filename = f"input_{file.filename}"
+            filepath = os.path.join(run_folder, filename)
+            file.save(filepath)
 
-        processing_status[run_id] = {
-            'status': 'uploaded',
-            'progress': 0,
-            'message': 'File uploaded',
-            'filename': filename,
-            'filepath': filepath,
-            'run_folder': run_folder,
-        }
+            processing_status[run_id] = {
+                'status': 'uploaded',
+                'progress': 0,
+                'message': 'File uploaded',
+                'filename': filename,
+                'filepath': filepath,
+                'run_folder': run_folder,
+            }
 
-        return {'success': True, 'run_id': run_id, 'filename': filename}
+            return {'success': True, 'run_id': run_id, 'filename': filename}
 
-    return JSONResponse(status_code=400, content={"error": "Invalid file type"})
+        return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 
     @app.post("/detect_keywords/{run_id}")
     async def detect_keywords(run_id: str):

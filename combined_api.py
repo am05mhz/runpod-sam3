@@ -24,7 +24,7 @@ import queue
 import argparse
 import inspect
 from contextlib import asynccontextmanager
-from longcat import utils as longcat_utils
+# from longcat import utils as longcat_utils
 
 # local common utils
 from common_utils import (
@@ -281,7 +281,7 @@ async def longcat_edit(
 async def longcat_home(request: Request):
     return templates.TemplateResponse("longcat_generate.html", {"request": request})
 
-@app.post("/generate")
+@app.post("/longcat/generate")
 async def longcat_generate(
     request: Request,
     prompt: str = Form(...),
@@ -413,16 +413,17 @@ async def bezier_upload(
     JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
-@app.post("/layeredsvg/upload")
-async def layeredsvg_upload(
-    file: UploadFile = File(...),
-    quality: str = Form("fast"),
-    max_layers: str = Form("10"),
-    n_depth_clusters: str = Form("3"),
-    moge_version: str = Form("v2"),
-    moge_resolution: str = Form("High"),
-    mask_dilation_px: str = Form("3"),
-    background_method: str = Form("depth")
+@app.post("/vectorize/{job_id}")
+async def vectorize_confirmed(
+    job_id: str
+    # file: UploadFile = File(...),
+    # quality: str = Form("fast"),
+    # max_layers: str = Form("10"),
+    # n_depth_clusters: str = Form("3"),
+    # moge_version: str = Form("v2"),
+    # moge_resolution: str = Form("High"),
+    # mask_dilation_px: str = Form("3"),
+    # background_method: str = Form("depth")
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file")

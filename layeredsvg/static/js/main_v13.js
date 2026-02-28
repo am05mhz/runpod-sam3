@@ -187,12 +187,11 @@ async function startKeywordDetection() {
             const formData = new FormData();
             formData.append('file', currentFile);
 
-            const uploadResponse = await fetch('/layeredsvg/upload', { method: 'POST', body: formData });
+            const uploadResponse = await fetch('/upload', { method: 'POST', body: formData });
             if (!uploadResponse.ok) throw new Error('Upload failed');
 
             const uploadData = await uploadResponse.json();
-            currentRunId = uploadData.job_id;
-            pollUrl = uploadData.poll_url;
+            currentRunId = uploadData.run_id;
         }
 
         // Hide upload controls, show progress
@@ -204,7 +203,7 @@ async function startKeywordDetection() {
         resetProgress();
 
         // Start keyword detection
-        const response = await fetch(pollUrl, { method: 'GET' });
+        const response = await fetch(`/detect_keywords/${currentRunId}`, { method: 'POST' });
         if (!response.ok) throw new Error('Keyword detection failed to start');
 
         startStatusPolling('keywords');
@@ -413,7 +412,7 @@ async function startSegmentation() {
         progressTitle.textContent = `Segmenting ${validKeywords.length} Keywords...`;
         resetProgress();
 
-        const response = await fetch(`/layeredsvg/segment/${currentRunId}`, {
+        const response = await fetch(`/segment/${currentRunId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ keywords: validKeywords })
@@ -451,7 +450,7 @@ async function checkStatus(phase) {
     if (!currentRunId) return;
 
     try {
-        const response = await fetch(`/job/${currentRunId}/status`);
+        const response = await fetch(`/status/${currentRunId}`);
         if (!response.ok) return;
 
         const status = await response.json();
@@ -510,7 +509,7 @@ async function showLayerReview() {
     segmentBtn.textContent = 'Segment All';
 
     try {
-        const response = await fetch(`/layeredsvg/layers/${currentRunId}`);
+        const response = await fetch(`/layers/${currentRunId}`);
         if (!response.ok) throw new Error('Failed to load layers');
 
         const data = await response.json();
