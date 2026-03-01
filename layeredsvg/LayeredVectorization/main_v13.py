@@ -266,16 +266,16 @@ def detect_keywords_v13(image_path, progress_cb=None):
     # # Deduplicate while preserving order
     # seen = set()
     # unique_keywords = []
-    for kw in keywords:
-        if kw not in seen:
-            seen.add(kw)
-            unique_keywords.append(kw)
+    # for kw in keywords:
+    #     if kw not in seen:
+    #         seen.add(kw)
+    #         unique_keywords.append(kw)
 
     if progress_cb:
         progress_cb(100, f"Skip detection")
 
     print(f"  Skip detection")
-    return "the object"
+    return ["the object"]
 
 
 # ============================================================================

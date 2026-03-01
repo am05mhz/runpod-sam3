@@ -27,6 +27,7 @@ import threading
 import importlib.util
 import uvicorn
 from starlette.requests import Request
+from typing import Dict, Any
 
 # moved local imports to global
 import time
@@ -79,7 +80,6 @@ def get_main_v13():
     return module
 
 def run_keyword_detection(run_id, **kwargs):
-    """Background thread: run Ollama keyword detection."""
     try:
         if __name__ == "__main__":
             status = processing_status[run_id]
@@ -179,31 +179,6 @@ def run_vectorization(run_id, **kwargs):
         selected_layers = status.get('selected_layers', [])
         quality = status.get('quality', 'fast')
 
-        input_path = os.path.join(status['run_folder'], status['filename'])
-        run_folder_abs = os.path.abspath(status['run_folder'])
-        workdir_path = os.path.join(run_folder_abs, 'workdir')
-        os.makedirs(workdir_path, exist_ok=True)
-
-        # Change to LayeredVectorization dir (required for imports)
-        layered_vec_dir = os.path.join(os.path.dirname(__file__), 'LayeredVectorization')
-        os.chdir(layered_vec_dir)
-
-        # Setup workdir symlink
-        workdir_existing = os.path.join(layered_vec_dir, 'workdir')
-        if os.path.islink(workdir_existing):
-            os.unlink(workdir_existing)
-        elif os.path.exists(workdir_existing):
-            shutil.rmtree(workdir_existing)
-
-        try:
-            os.symlink(workdir_path, workdir_existing)
-        except OSError:
-            shutil.copytree(workdir_path, workdir_existing)
-
-        if __name__ == "__main__":
-            status['progress'] = 10
-            status['message'] = 'Loading models...'
-
         # Load config
         main_v13 = get_main_v13()
 
@@ -218,49 +193,6 @@ def run_vectorization(run_id, **kwargs):
         config_file = config_map.get(quality, 'base_config_v11.yaml')
         config_path = os.path.join(os.path.dirname(__file__),
                                     'LayeredVectorization', 'config', config_file)
-
-        # Setup args
-        # parser = argparse.ArgumentParser()
-        # parser.add_argument("-c", "--config", type=str)
-        # parser.add_argument("-timg", "--target_image", type=str)
-        # parser.add_argument("-fsn", "--file_save_name", type=str, default="output")
-        # parser.add_argument("--moge_version", type=str, default="v2")
-        # parser.add_argument("--moge_resolution", type=str, default="High")
-        # parser.add_argument("--max_layers", type=int, default=10)
-        # parser.add_argument("--n_depth_clusters", type=int, default=3)
-        # parser.add_argument("--min_mask_area", type=int, default=500)
-        # parser.add_argument("--mask_dilation_px", type=int, default=3)
-        # parser.add_argument("--background_method", type=str, default="depth")
-        # parser.add_argument("--vtracer_enable", type=bool, default=True)
-        # parser.add_argument("--staircase_area", type=float, default=1.5)
-        # parser.add_argument("--corner_angle", type=float, default=135.0)
-        # parser.add_argument("--simplify_error", type=float, default=2.0)
-        # parser.add_argument("--smooth_iterations", type=int, default=0)
-        # parser.add_argument("--skip_sds", action="store_true")
-
-        # args = parser.parse_args([])
-        # args.config = os.path.join(layered_vec_dir, "config", config_file)
-        # args.target_image = os.path.abspath(os.path.join(original_dir, input_path))
-        # args.file_save_name = "output"
-
-        # Get max_layers from form data
-        # max_layers_str = status.get('max_layers', '10')
-        # args.max_layers = int(max_layers_str)
-
-        # n_depth_clusters_str = status.get('n_depth_clusters', '3')
-        # args.n_depth_clusters = int(n_depth_clusters_str)
-
-        # args.moge_version = status.get('moge_version', args.moge_version)
-        # args.moge_resolution = status.get('moge_resolution', args.moge_resolution)
-
-        # # EDGE GAP FIX: Get mask dilation parameter
-        # mask_dilation_str = status.get('mask_dilation_px', '3')
-        # args.mask_dilation_px = int(mask_dilation_str)
-
-        # # Background detection method: "depth" or "area"
-        # args.background_method = status.get('background_method', 'depth')
-
-        # args = load_config(args.config, args)
 
         args = argparse.Namespace()
         args.target_image = status['filepath']
@@ -368,7 +300,9 @@ if __name__ == "__main__":
 
             filename = f"input_{file.filename}"
             filepath = os.path.join(run_folder, filename)
-            file.save(filepath)
+
+            with open(filepath, "wb") as f:
+                f.write(await file.read())
 
             processing_status[run_id] = {
                 'status': 'uploaded',
@@ -397,21 +331,19 @@ if __name__ == "__main__":
 
         return {'success': True, 'message': 'Keyword detection started'}
 
-    class JsonKeyword(BaseModel):
-        keywords: str
-
     @app.post("/segment/{run_id}")
-    async def segment_keywords(run_id: str, params: JsonKeyword):
+    async def segment_keywords(run_id: str, data: Dict[Any, Any]):
         if run_id not in processing_status:
             return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
         if run_id in processing_threads:
             return JSONResponse(status_code=400, content={"error": "Already processing"})
 
+        keywords = data.get("keywords", [])
         if not keywords:
             return JSONResponse(status_code=400, content={"error": "No keywords provided"})
 
         # Store keywords with confidence for the background thread
-        processing_status[run_id]['keywords_with_conf'] = params.keywords
+        processing_status[run_id]['keywords_with_conf'] = keywords
 
         thread = threading.Thread(target=run_segmentation, args=(run_id,))
         thread.daemon = True
@@ -453,17 +385,19 @@ if __name__ == "__main__":
         quality: str = "fast"
 
     @app.post("/vectorize/{run_id}")
-    async def vectorize_confirmed(run_id: str, params: JsonLayerConfig):
+    async def vectorize_confirmed(run_id: str, data: Dict[Any, Any]):
         if run_id not in processing_status:
             return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
         if run_id in processing_threads:
             return JSONResponse(status_code=400, content={"error": "Already processing"})
 
+        selected_layers = data.get("selected_layerd")
+        quality = data.get("guality", "fast")
         if not selected_layers:
             return JSONResponse(status_code=400, content={"error": "No layers selected"})
 
-        processing_status[run_id]['selected_layers'] = params.selected_layers
-        processing_status[run_id]['quality'] = params.quality
+        processing_status[run_id]['selected_layers'] = selected_layers
+        processing_status[run_id]['quality'] = quality
 
         thread = threading.Thread(target=run_vectorization, args=(run_id,))
         thread.daemon = True
