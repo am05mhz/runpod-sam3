@@ -108,10 +108,10 @@ async def worker_loop(worker_idx: int = 0):
                     func_name = job.get("callable")
 
                     if module_key == "longcat":
-                        fn = getattr(longcat_utils, func_name, None)
+                        # fn = getattr(longcat_utils, func_name, None)
 
-                        if fn is None:
-                            raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
+                        # if fn is None:
+                        raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
 
                     else:
                         module_path = COMPONENT_PATHS.get(module_key)
@@ -413,11 +413,38 @@ async def bezier_upload(
     JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
-@app.post("/vectorize/{job_id}")
+@app.post("/segment_keywords")
+async def segment_keywords(
+    file: UploadFile = File(...),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file")
+    uid = make_id("lyr")
+    ext = file.filename.rsplit(".", 1)[-1]
+    run_folder = os.path.join(OUTPUT_DIR, uid)
+    filename = f"input_{file.filename}"
+    os.makedirs(run_folder, exist_ok=True)
+    inp = os.path.join(run_folder, f"input_{file.filename}")
+    job_id = uid
+    JOBS[job_id] = {
+        "module": "layeredsvg",
+        "callable": "run_segmentation",
+        "args": [job_id],
+        "kwargs": {
+            "run_folder": run_folder,
+        },
+        "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+        "status": "queued",
+        "created_at": time.time(),
+    }
+    JOB_QUEUE.put(job_id)
+    return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
+
+@app.post("/layeredsvg/vectorize/{job_id}")
 async def vectorize_confirmed(
     job_id: str
     # file: UploadFile = File(...),
-    # quality: str = Form("fast"),
+    quality: str = Form("fast"),
     # max_layers: str = Form("10"),
     # n_depth_clusters: str = Form("3"),
     # moge_version: str = Form("v2"),

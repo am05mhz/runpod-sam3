@@ -571,9 +571,6 @@ if __name__ == "__main__":
     print("V13 Layered Vectorization - Ollama + SAM3")
     print("=" * 60)
     print(f"Server: http://localhost:{cli_args.port}")
-    print(f"Prerequisites:")
-    print(f"  - Ollama running: ollama serve")
-    print(f"  - Model pulled: ollama pull qwen2.5vl:7b")
     print("=" * 60)
 
     uvicorn.run(app, host=cli_args.host, port=cli_args.port)

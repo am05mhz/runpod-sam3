@@ -471,40 +471,42 @@ def sam_image(device, image: Union[str, np.ndarray], masks_save_path: str = "-1"
     # Fix for torchvision batched_nms device mismatch bug with larger images (1024x1024)
     # This is a known issue where some tensors end up on CPU during NMS
     # Workaround: temporarily disable CUDA for the mask generation, then re-enable
-    try:
-        masks2 = mask_generator_2.generate(image)
-    except RuntimeError as e:
-        if "indices should be either on cpu" in str(e):
-            print("SAM device mismatch detected, retrying with CPU fallback for NMS...")
-            # Move SAM to CPU as fallback
-            sam.to(device="cpu")
-            if use_samhq:
-                from segment_anything_hq import SamAutomaticMaskGenerator as HQSamAutomaticMaskGenerator
-                mask_generator_2 = HQSamAutomaticMaskGenerator(
-                    model=sam,
-                    points_per_side=sam_conf["points_per_side"],
-                    pred_iou_thresh=sam_conf["pred_iou_thresh"],
-                    stability_score_thresh=sam_conf["stability_score_thresh"],
-                    crop_n_layers=sam_conf["crop_n_layers"],
-                    crop_n_points_downscale_factor=sam_conf["crop_n_points_downscale_factor"],
-                    min_mask_region_area=sam_conf["min_mask_region_area"],
-                    box_nms_thresh=sam_conf["box_nms_thresh"],
-                )
-            else:
-                from segment_anything import SamAutomaticMaskGenerator
-                mask_generator_2 = SamAutomaticMaskGenerator(
-                    model=sam,
-                    points_per_side=sam_conf["points_per_side"],
-                    pred_iou_thresh=sam_conf["pred_iou_thresh"],
-                    stability_score_thresh=sam_conf["stability_score_thresh"],
-                    crop_n_layers=sam_conf["crop_n_layers"],
-                    crop_n_points_downscale_factor=sam_conf["crop_n_points_downscale_factor"],
-                    min_mask_region_area=sam_conf["min_mask_region_area"],
-                    box_nms_thresh=sam_conf["box_nms_thresh"],
-                )
-            masks2 = mask_generator_2.generate(image)
-        else:
-            raise e
+    # try:
+    
+    masks2 = mask_generator_2.generate(image)
+    
+    # except RuntimeError as e:
+    #     if "indices should be either on cpu" in str(e):
+    #         print("SAM device mismatch detected, retrying with CPU fallback for NMS...")
+    #         # Move SAM to CPU as fallback
+    #         sam.to(device="cpu")
+    #         if use_samhq:
+    #             from segment_anything_hq import SamAutomaticMaskGenerator as HQSamAutomaticMaskGenerator
+    #             mask_generator_2 = HQSamAutomaticMaskGenerator(
+    #                 model=sam,
+    #                 points_per_side=sam_conf["points_per_side"],
+    #                 pred_iou_thresh=sam_conf["pred_iou_thresh"],
+    #                 stability_score_thresh=sam_conf["stability_score_thresh"],
+    #                 crop_n_layers=sam_conf["crop_n_layers"],
+    #                 crop_n_points_downscale_factor=sam_conf["crop_n_points_downscale_factor"],
+    #                 min_mask_region_area=sam_conf["min_mask_region_area"],
+    #                 box_nms_thresh=sam_conf["box_nms_thresh"],
+    #             )
+    #         else:
+    #             from segment_anything import SamAutomaticMaskGenerator
+    #             mask_generator_2 = SamAutomaticMaskGenerator(
+    #                 model=sam,
+    #                 points_per_side=sam_conf["points_per_side"],
+    #                 pred_iou_thresh=sam_conf["pred_iou_thresh"],
+    #                 stability_score_thresh=sam_conf["stability_score_thresh"],
+    #                 crop_n_layers=sam_conf["crop_n_layers"],
+    #                 crop_n_points_downscale_factor=sam_conf["crop_n_points_downscale_factor"],
+    #                 min_mask_region_area=sam_conf["min_mask_region_area"],
+    #                 box_nms_thresh=sam_conf["box_nms_thresh"],
+    #             )
+    #         masks2 = mask_generator_2.generate(image)
+    #     else:
+    #         raise e
     masks = [np.full(image.shape[:2], 255, dtype=np.uint8)]
     for i,mask in enumerate(masks2):
         image = np.where(mask['segmentation'], 255, 0).astype(np.uint8)

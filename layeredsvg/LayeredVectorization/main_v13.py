@@ -45,9 +45,9 @@ import yaml
 V13_RESOLUTION = 1024
 
 # Ollama configuration
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
-OLLAMA_MODEL = "qwen2.5vl:7b"
+# OLLAMA_BASE_URL = "http://localhost:11434"
+# OLLAMA_GENERATE_URL = f"{OLLAMA_BASE_URL}/api/generate"
+# OLLAMA_MODEL = "qwen2.5vl:7b"
 
 # SAM3 global model holders (loaded on demand, unloaded for VRAM management)
 SAM3_MODEL = None
@@ -110,29 +110,29 @@ def image_to_base64_ollama(image):
 # Ollama VRAM Management
 # ============================================================================
 
-def unload_ollama_model():
-    """Unload Ollama model from memory to free VRAM."""
-    print(f"  Unloading Ollama model: {OLLAMA_MODEL}...")
-    try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": "",
-            "keep_alive": 0
-        }
-        requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=30)
-        time.sleep(3.0)
-        # Second request to be sure
-        try:
-            requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=10)
-        except Exception:
-            pass
-        time.sleep(2.0)
-        clear_gpu_memory()
-        print(f"  Ollama model unloaded")
-        return True
-    except Exception as e:
-        print(f"  Error unloading Ollama model: {e}")
-        return False
+# def unload_ollama_model():
+#     """Unload Ollama model from memory to free VRAM."""
+#     print(f"  Unloading Ollama model: {OLLAMA_MODEL}...")
+#     try:
+#         payload = {
+#             "model": OLLAMA_MODEL,
+#             "prompt": "",
+#             "keep_alive": 0
+#         }
+#         requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=30)
+#         time.sleep(3.0)
+#         # Second request to be sure
+#         try:
+#             requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=10)
+#         except Exception:
+#             pass
+#         time.sleep(2.0)
+#         clear_gpu_memory()
+#         print(f"  Ollama model unloaded")
+#         return True
+#     except Exception as e:
+#         print(f"  Error unloading Ollama model: {e}")
+#         return False
 
 
 # ============================================================================
@@ -192,88 +192,90 @@ def detect_keywords_v13(image_path, progress_cb=None):
     Returns:
         list[str] - list of detected keyword strings
     """
-    print("=" * 60)
-    print("Phase 1: Detecting objects with Ollama Qwen2.5 VL")
-    print("=" * 60)
+    # print("=" * 60)
+    # print("Phase 1: Detecting objects with Ollama Qwen2.5 VL")
+    # print("=" * 60)
 
-    if progress_cb:
-        progress_cb(5, "Preparing image for object detection...")
+    # if progress_cb:
+    #     progress_cb(5, "Preparing image for object detection...")
 
-    # Unload SAM3 if loaded (free VRAM for Ollama)
-    if SAM3_MODEL is not None:
-        unload_sam3_model()
+    # # Unload SAM3 if loaded (free VRAM for Ollama)
+    # if SAM3_MODEL is not None:
+    #     unload_sam3_model()
 
-    # Load and resize image for Ollama
-    image_pil = Image.open(image_path).convert('RGB')
-    # Resize to reasonable size for vision model (max 1024 on longest side)
-    w, h = image_pil.size
-    max_dim = 1024
-    if max(w, h) > max_dim:
-        scale = max_dim / max(w, h)
-        image_pil = image_pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    # # Load and resize image for Ollama
+    # image_pil = Image.open(image_path).convert('RGB')
+    # # Resize to reasonable size for vision model (max 1024 on longest side)
+    # w, h = image_pil.size
+    # max_dim = 1024
+    # if max(w, h) > max_dim:
+    #     scale = max_dim / max(w, h)
+    #     image_pil = image_pil.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
 
-    img_b64 = image_to_base64_ollama(image_pil)
+    # img_b64 = image_to_base64_ollama(image_pil)
 
-    if progress_cb:
-        progress_cb(20, "Analyzing image with AI vision...")
+    # if progress_cb:
+    #     progress_cb(20, "Analyzing image with AI vision...")
 
-    prompt = (
-        "List all distinct objects and elements visible in this image. "
-        "Output ONLY keywords, one per line. Be specific (e.g. 'red flowers' not just 'flowers', "
-        "'tree branch' not just 'tree'). Do not include background, sky, or abstract concepts. "
-        "Do not number the items or add explanations."
-    )
+    # prompt = (
+    #     "List all distinct objects and elements visible in this image. "
+    #     "Output ONLY keywords, one per line. Be specific (e.g. 'red flowers' not just 'flowers', "
+    #     "'tree branch' not just 'tree'). Do not include background, sky, or abstract concepts. "
+    #     "Do not number the items or add explanations."
+    # )
 
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "images": [img_b64],
-        "stream": False,
-        "keep_alive": "10m"
-    }
+    # payload = {
+    #     "model": OLLAMA_MODEL,
+    #     "prompt": prompt,
+    #     "images": [img_b64],
+    #     "stream": False,
+    #     "keep_alive": "10m"
+    # }
 
-    try:
-        print(f"  Calling Ollama ({OLLAMA_MODEL})...")
-        response = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=120)
-        response.raise_for_status()
-        result = response.json()
-        raw_response = result.get("response", "")
-        print(f"  Raw response:\n{raw_response}")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError(
-            "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) "
-            f"and {OLLAMA_MODEL} is pulled (ollama pull {OLLAMA_MODEL})."
-        )
-    except Exception as e:
-        raise RuntimeError(f"Ollama error: {str(e)}")
+    # try:
+    #     print(f"  Calling Ollama ({OLLAMA_MODEL})...")
+    #     #response = requests.post(OLLAMA_GENERATE_URL, json=payload, timeout=120)
+    #     #response.raise_for_status()
+    #     result = {
+    #         'response': 'sitting girl, shoes, red bandana, green shirt, yellow pants'
+    #     }
+    #     raw_response = result.get("response", "")
+    #     print(f"  Raw response:\n{raw_response}")
+    # except requests.exceptions.ConnectionError:
+    #     raise RuntimeError(
+    #         "Cannot connect to Ollama. Make sure Ollama is running (ollama serve) "
+    #         f"and {OLLAMA_MODEL} is pulled (ollama pull {OLLAMA_MODEL})."
+    #     )
+    # except Exception as e:
+    #     raise RuntimeError(f"Ollama error: {str(e)}")
 
-    if progress_cb:
-        progress_cb(80, "Parsing keywords...")
+    # if progress_cb:
+    #     progress_cb(80, "Parsing keywords...")
 
-    # Parse response into keyword list
-    keywords = []
-    for line in raw_response.strip().split('\n'):
-        line = line.strip()
-        # Remove numbering like "1.", "- ", "* ", etc.
-        line = re.sub(r'^[\d]+[.\)]\s*', '', line)
-        line = re.sub(r'^[-*•]\s*', '', line)
-        line = line.strip()
-        if line and len(line) > 1 and len(line) < 80:
-            keywords.append(line.lower())
+    # # Parse response into keyword list
+    # keywords = []
+    # for line in raw_response.strip().split('\n'):
+    #     line = line.strip()
+    #     # Remove numbering like "1.", "- ", "* ", etc.
+    #     line = re.sub(r'^[\d]+[.\)]\s*', '', line)
+    #     line = re.sub(r'^[-*•]\s*', '', line)
+    #     line = line.strip()
+    #     if line and len(line) > 1 and len(line) < 80:
+    #         keywords.append(line.lower())
 
-    # Deduplicate while preserving order
-    seen = set()
-    unique_keywords = []
+    # # Deduplicate while preserving order
+    # seen = set()
+    # unique_keywords = []
     for kw in keywords:
         if kw not in seen:
             seen.add(kw)
             unique_keywords.append(kw)
 
     if progress_cb:
-        progress_cb(100, f"Detected {len(unique_keywords)} objects")
+        progress_cb(100, f"Skip detection")
 
-    print(f"  Detected {len(unique_keywords)} keywords: {unique_keywords}")
-    return unique_keywords
+    print(f"  Skip detection")
+    return "the object"
 
 
 # ============================================================================
@@ -303,7 +305,7 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         progress_cb(5, "Preparing segmentation model...")
 
     # VRAM swap: unload Ollama, load SAM3
-    unload_ollama_model()
+    # unload_ollama_model()
     clear_gpu_memory()
 
     if progress_cb:
@@ -350,7 +352,9 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
                 images=working_pil,
                 text=keyword,
                 return_tensors="pt"
-            ).to(device)
+            )
+            # manually move every tensor to device
+            model_inputs = {k: v.to(SAM3_MODEL.device) for k, v in model_inputs.items() if hasattr(v, "to")}
 
             with torch.no_grad():
                 inference_output = SAM3_MODEL(**model_inputs)
@@ -467,6 +471,9 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         preview_path = os.path.join(layers_dir, f"layer_{lid}_preview.png")
         mask_path = os.path.join(layers_dir, f"layer_{lid}_mask.png")
 
+        scale = 150 / max(orig_w, orig_h)
+        preview_rgba = cv2.resize(preview_rgba, (round(orig_w * scale), round(orig_h * scale)), interpolation=cv2.INTER_NEAREST)
+
         Image.fromarray(preview_rgba).save(preview_path)
         Image.fromarray(mask).save(mask_path)
 
@@ -496,7 +503,14 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         merge_preview[mask_bool] = working_np[mask_bool]
 
     merge_preview_path = os.path.join(layers_dir, "merge_preview.png")
-    Image.fromarray(merge_preview).save(merge_preview_path)
+
+    merge_preview_resized = cv2.resize(
+        merge_preview,
+        (orig_w, orig_h),
+        interpolation=cv2.INTER_NEAREST  # IMPORTANT for masks / sharp edges
+    )
+
+    Image.fromarray(merge_preview_resized).save(merge_preview_path)
 
     # Save metadata for Phase 3
     meta = {
@@ -890,7 +904,7 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
     print(f"Output: {output_dir}")
 
     return {
-        'svg_path': final_svg_path,
+        'svg_path': fullsize_svg_path,
         'layers': layer_svgs,
         'n_layers': len(layer_svgs),
     }
