@@ -204,11 +204,11 @@ async function startKeywordDetection() {
         resetProgress();
 
         // Start keyword detection
-        const response = await fetch(pollUrl, { method: 'GET' });
-        if (!response.ok) throw new Error('Keyword detection failed to start');
+        // const response = await fetch(pollUrl, { method: 'GET' });
+        // if (!response.ok) throw new Error('Keyword detection failed to start');
 
-        startStatusPolling('keywords');
-
+        // startStatusPolling('keywords');
+        showKeywordEditor(["the object"]);
     } catch (error) {
         console.error('Error:', error);
         alert('An error occurred: ' + error.message);
@@ -225,8 +225,8 @@ async function startRedetect() {
     resetProgress();
 
     try {
-        const response = await fetch(`/detect_keywords/${currentRunId}`, { method: 'POST' });
-        if (!response.ok) throw new Error('Keyword detection failed to start');
+        // const response = await fetch(`/detect_keywords/${currentRunId}`, { method: 'POST' });
+        // if (!response.ok) throw new Error('Keyword detection failed to start');
         startStatusPolling('keywords');
     } catch (error) {
         console.error('Error:', error);
@@ -457,9 +457,9 @@ async function checkStatus(phase) {
         const status = await response.json();
         updateProgress(status);
 
-        if (phase === 'keywords' && status.status === 'keywords_ready') {
-            clearInterval(processingInterval);
-            showKeywordEditor(status.keywords || []);
+        if (phase === 'keywords') {
+            // clearInterval(processingInterval);
+            showKeywordEditor(["the object"]);
         } else if (phase === 'segment' && status.status === 'layers_ready') {
             clearInterval(processingInterval);
             showLayerReview();

@@ -391,7 +391,7 @@ if __name__ == "__main__":
         if run_id in processing_threads:
             return JSONResponse(status_code=400, content={"error": "Already processing"})
 
-        selected_layers = data.get("selected_layerd")
+        selected_layers = data.get("selected_layers")
         quality = data.get("guality", "fast")
         if not selected_layers:
             return JSONResponse(status_code=400, content={"error": "No layers selected"})

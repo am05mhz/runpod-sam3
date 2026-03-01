@@ -20,6 +20,7 @@ from pathlib import Path
 import uvicorn
 import time
 import threading
+import json
 import queue
 import argparse
 import inspect
@@ -38,6 +39,7 @@ from common_utils import (
     import_module_from_path,
     safe_mkdir,
     make_id,
+    allowed_file,
 )
 
 @asynccontextmanager
@@ -212,6 +214,10 @@ async def worker_loop(worker_idx: int = 0):
             raise
         finally:
             pass
+
+@app.get("/")
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/combined_output/{path:path}")
 def serve_combined_output(path: str):
@@ -417,15 +423,55 @@ async def bezier_upload(
 async def segment_keywords(
     file: UploadFile = File(...),
 ):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file")
-    uid = make_id("lyr")
-    ext = file.filename.rsplit(".", 1)[-1]
+    if file and allowed_file(file.filename):
+        uid = make_id("lyr")
+        run_folder = os.path.join(OUTPUT_DIR, uid)
+        os.makedirs(run_folder, exist_ok=True)
+
+        filename = f"input_{file.filename}"
+        filepath = os.path.join(run_folder, filename)
+        metapath = os.path.join(run_folder, "job.json")
+
+        with open(filepath, "wb") as f:
+            f.write(await file.read())
+
+        job_data = {
+            'status': 'uploaded',
+            'progress': 0,
+            'message': 'File uploaded',
+            'filename': filename,
+            'filepath': filepath,
+            'run_folder': run_folder,
+        }
+        with open(metapath, 'w') as f:
+            json.dump(job_data, f, indent=2)
+
+        job_id = uid
+        JOBS[job_id] = {
+            "module": "layeredsvg",
+            "callable": "run_segmentation",
+            "args": [job_id],
+            "kwargs": {
+                "run_folder": run_folder,
+            },
+            "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        JOB_QUEUE.put(job_id)
+        return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
+
+    return JSONResponse(status_code=400, content={"error": "Invalid file type"})
+
+@app.post("/layeredsvg/segment/{job_id}")
+async def layeredsvg_segment(
+    job_id: str
+):
+    uid = job_id
     run_folder = os.path.join(OUTPUT_DIR, uid)
-    filename = f"input_{file.filename}"
-    os.makedirs(run_folder, exist_ok=True)
-    inp = os.path.join(run_folder, f"input_{file.filename}")
-    job_id = uid
+    metapath = os.path.join(run_folder, "job.json")
+    job_data = json.load(metapath)
+
     JOBS[job_id] = {
         "module": "layeredsvg",
         "callable": "run_segmentation",
@@ -439,6 +485,38 @@ async def segment_keywords(
     }
     JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
+
+@app.post("/layeredsvg/upload")
+async def layeredsvg_upload(file: UploadFile = File(...)):
+    if file is None or file.filename == '':
+        return JSONResponse(status_code=400, content={"error": "No selected file"})
+
+    if file and allowed_file(file.filename):
+        uid = make_id("lyr")
+        run_folder = os.path.join(OUTPUT_DIR, uid)
+        os.makedirs(run_folder, exist_ok=True)
+
+        filename = f"input_{file.filename}"
+        filepath = os.path.join(run_folder, filename)
+        metapath = os.path.join(run_folder, "job.json")
+
+        with open(filepath, "wb") as f:
+            f.write(await file.read())
+
+        job_data = {
+            'status': 'uploaded',
+            'progress': 0,
+            'message': 'File uploaded',
+            'filename': filename,
+            'filepath': filepath,
+            'run_folder': run_folder,
+        }
+        with open(metapath, 'w') as f:
+            json.dump(job_data, f, indent=2)
+
+        return {'success': True, 'run_id': uid, 'filename': filename}
+
+    return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 
 @app.post("/layeredsvg/vectorize/{job_id}")
 async def vectorize_confirmed(
