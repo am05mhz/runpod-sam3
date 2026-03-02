@@ -23,7 +23,7 @@ pandas
 scikit-image
 scikit-learn
 
-setuptools<82.0.0
+setuptools==59.6.0
 svgwrite
 svgpathtools
 cssutils

@@ -584,6 +584,9 @@ async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
     if not os.path.isdir(run_folder):
         return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
 
+    svg_out = os.path.join(OUTPUT_DIR, f"{uid}_output.svg")
+    png_out = os.path.join(OUTPUT_DIR, f"{uid}_output.png")
+
     metapath = os.path.join(run_folder, "job.json")
     job_data = loadFromFile(metapath)
 
