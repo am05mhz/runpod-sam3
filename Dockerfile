@@ -63,38 +63,30 @@ ARG WORKSPACE_DIR=/app
 ENV WORKSPACE_DIR=${WORKSPACE_DIR}
 WORKDIR $WORKSPACE_DIR
 
-# Install dependencies in a single RUN command to reduce layers and clean up in the same layer to reduce image size
+# Create virtualenv
+ENV VIRTUAL_ENV=/app/venv/apps
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-RUN add-apt-repository --yes ppa:deadsnakes/ppa && \
-    apt-get update --yes --quiet && \
-    apt-get install --yes --quiet --no-install-recommends \
-    software-properties-common \
-    gpg-agent \
-    build-essential cmake \
-    apt-utils \
-    ca-certificates \
-    curl \
-    git
+# Upgrade packaging tools FIRST
+RUN pip install --upgrade pip setuptools wheel
 
-# Create and activate a Python virtual environment
-RUN python3 -m venv /app/venv/apps
-
-# Install Python packages
-RUN source /app/venv/apps/bin/activate
+# Install base packages
 RUN pip install --no-cache-dir \
     asyncio \
     requests \
     runpod
 
-# Install requirements.txt
-COPY requirements.txt ./
-COPY requirements--pre.txt ./
-COPY requirements--no-isolate.txt ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir "setuptools==59.6.0" && \
-    pip install --no-cache-dir --upgrade huggingface_hub && \
-    pip install --no-cache-dir -r requirements.txt && \
+# Copy requirements
+COPY requirements.txt .
+COPY requirements--pre.txt .
+COPY requirements--no-isolate.txt .
+
+# Install normal requirements
+RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir --pre -r requirements--pre.txt
+
+# Install no-isolation requirements
 RUN pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.txt
 
 # RUN git clone https://github.com/facebookresearch/sam3.git && \
