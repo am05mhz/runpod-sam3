@@ -453,8 +453,10 @@ async def segment_keywords(
             "args": [job_id],
             "kwargs": {
                 "run_folder": run_folder,
+                'filepath': filepath,
+                'filename': filename,
             },
-            "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+            "ori_url": f'/combined_output/{filepath.replace(OUTPUT_DIR + "/", "")}',
             "status": "queued",
             "created_at": time.time(),
         }
@@ -470,15 +472,15 @@ async def layeredsvg_segment(
     uid = job_id
     run_folder = os.path.join(OUTPUT_DIR, uid)
     metapath = os.path.join(run_folder, "job.json")
-    job_data = json.load(metapath)
+    with open(metapath, 'r') as f:
+        job_data = json.load(f)
 
+    inp = job_data['filepath']
     JOBS[job_id] = {
         "module": "layeredsvg",
         "callable": "run_segmentation",
         "args": [job_id],
-        "kwargs": {
-            "run_folder": run_folder,
-        },
+        "kwargs": job_data,
         "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
         "status": "queued",
         "created_at": time.time(),
@@ -514,7 +516,7 @@ async def layeredsvg_upload(file: UploadFile = File(...)):
         with open(metapath, 'w') as f:
             json.dump(job_data, f, indent=2)
 
-        return {'success': True, 'run_id': uid, 'filename': filename}
+        return {'success': True, 'job_id': uid, 'filename': filename}
 
     return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 

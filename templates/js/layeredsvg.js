@@ -192,7 +192,6 @@ async function startKeywordDetection() {
 
             const uploadData = await uploadResponse.json();
             currentRunId = uploadData.job_id;
-            pollUrl = uploadData.poll_url;
         }
 
         // Hide upload controls, show progress
