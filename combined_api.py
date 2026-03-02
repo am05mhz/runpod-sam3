@@ -41,6 +41,8 @@ from common_utils import (
     safe_mkdir,
     make_id,
     allowed_file,
+    loadFromFile,
+    saveToFile,
 )
 
 @asynccontextmanager
@@ -186,8 +188,11 @@ async def worker_loop(worker_idx: int = 0):
                         if result is not None:
                             job["status"] = result.get("status", "error")
                             if job["status"] == "layers_ready":
-                                job['keywords'] = module_kwargs.get('keywords_with_conf', [])
-                                job["layers_info"] = result.get("layers_info", [])
+                                job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
+                                job_data['keywords'] = module_kwargs.get('keywords_with_conf', [])
+                                job_data["layers_info"] = result.get("layers_info", [])
+                                saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
+
                                 metapath = os.path.join(OUTPUT_DIR, job_id, "job.json")
                                 with open(metapath, 'w') as f:
                                     json.dump(job, f, indent=2)

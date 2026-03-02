@@ -30,6 +30,7 @@ import json
 from starlette.requests import Request
 from typing import Dict, Any
 from pathlib import Path
+from common_utils import loadFromFile
 
 # moved local imports to global
 import time
@@ -119,14 +120,6 @@ def run_keyword_detection(run_id, **kwargs):
     finally:
         if __name__ == "__main__" and run_id in processing_threads:
             processing_threads.pop(run_id, None)
-
-def loadFromFile(filepath):
-    if not os.path.exist(filepath):
-        return None
-
-    with open(filepath, 'r') as f:
-        return json.load(f)
-
 
 def run_segmentation(run_id, **kwargs):
     """Background thread: run SAM3 segmentation."""

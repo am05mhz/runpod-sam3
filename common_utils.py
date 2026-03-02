@@ -6,6 +6,7 @@ import importlib.util
 import traceback
 import queue
 import threading
+import json
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
@@ -83,3 +84,17 @@ def join(*parts):
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
+
+def loadFromFile(filepath):
+    if not os.path.exist(filepath):
+        return None
+
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+def saveToFile(filepath, data):
+    if not os.path.exist(filepath):
+        return None
+
+    with open(filepath, 'w') as f:
+        return json.dump(data, f, indent=2)
