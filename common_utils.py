@@ -86,14 +86,14 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
 
 def loadFromFile(filepath):
-    if not os.path.exist(filepath):
+    if not os.path.exists(filepath):
         return None
 
     with open(filepath, 'r') as f:
         return json.load(f)
 
 def saveToFile(filepath, data):
-    if not os.path.exist(filepath):
+    if not os.path.exists(filepath):
         return None
 
     with open(filepath, 'w') as f:
