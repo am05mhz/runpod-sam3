@@ -186,6 +186,7 @@ async def worker_loop(worker_idx: int = 0):
                         if result is not None:
                             job["status"] = result.get("status", "error")
                             if job["status"] == "layers_ready":
+                                job['keywords'] = module_kwargs.get('keywords_with_conf', [])
                                 job["layers_info"] = result.get("layers_info", [])
                                 metapath = os.path.join(OUTPUT_DIR, job_id, "job.json")
                                 with open(metapath, 'w') as f:
@@ -482,12 +483,7 @@ async def segment_keywords(
             "module": "layeredsvg",
             "callable": "run_segmentation",
             "args": [job_id],
-            "kwargs": {
-                "run_folder": run_folder,
-                'filepath': filepath,
-                'filename': filename,
-                'keywords_with_conf': keywords,
-            },
+            "kwargs": {'keywords_with_conf': keywords},
             "ori_url": f'/combined_output/{filepath.replace(OUTPUT_DIR + "/", "")}',
             "status": "queued",
             "created_at": time.time(),
@@ -516,13 +512,12 @@ async def layeredsvg_segment(
     with open(metapath, 'r') as f:
         job_data = json.load(f)
 
-    job_data['keywords_with_conf'] = keywords
     inp = job_data['filepath']
     JOBS[job_id] = {
         "module": "layeredsvg",
         "callable": "run_segmentation",
         "args": [job_id],
-        "kwargs": {},
+        "kwargs": {'keywords_with_conf': keywords},
         "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
         "status": "queued",
         "created_at": time.time(),

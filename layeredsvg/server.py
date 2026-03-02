@@ -26,8 +26,10 @@ import shutil
 import threading
 import importlib.util
 import uvicorn
+import json
 from starlette.requests import Request
 from typing import Dict, Any
+from pathlib import Path
 
 # moved local imports to global
 import time
@@ -38,6 +40,7 @@ import traceback
 # Add LayeredVectorization to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'LayeredVectorization'))
 
+OUTPUT_DIR = str(Path(__file__).parent.parent / "combined_output")
 
 if __name__ == "__main__":
     app = FastAPI(title="V13 Layered Vectorization")
