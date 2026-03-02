@@ -7,7 +7,10 @@ import traceback
 import queue
 import threading
 import json
+import aiohttp
 from pathlib import Path
+from fastapi import HTTPException
+from pil impoer Image
 
 BASE_DIR = Path(__file__).parent
 
@@ -78,7 +81,6 @@ def import_module_from_path(name: str, path: str):
 def safe_mkdir(p: str):
     os.makedirs(p, exist_ok=True)
 
-
 def join(*parts):
     return os.path.join(*parts)
 
@@ -98,3 +100,19 @@ def saveToFile(filepath, data):
 
     with open(filepath, 'w') as f:
         return json.dump(data, f, indent=2)
+
+async def load_image_from_url(url: str) -> Image.Image:
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to fetch image URL (status={resp.status})"
+                )
+            data = await resp.read()
+
+    try:
+        return Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception as e:
+        raise HTTPException(400, f"Invalid image from URL: {e}")

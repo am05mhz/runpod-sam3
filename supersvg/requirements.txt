@@ -1,5 +1,5 @@
-torch
-torchvision
+torch==2.5.1+cu121
+torchvision0.20.1+cu121
 numpy<2
 scikit-image
 #anaconda
@@ -12,7 +12,7 @@ svgwrite
 svgpathtools
 cssutils
 numba
-torch-tools
+torch-tools==0.1.5
 scikit-fmm
 easydict
 #visdom

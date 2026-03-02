@@ -1,2 +1,2 @@
-torch-tools
-visdom
+torch-tools==0.1.5
+visdom==0.2.4

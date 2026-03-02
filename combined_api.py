@@ -43,6 +43,7 @@ from common_utils import (
     allowed_file,
     loadFromFile,
     saveToFile,
+    load_image_from_url,
 )
 
 @asynccontextmanager
@@ -463,50 +464,51 @@ async def bezier_upload(
 
 @app.post("/segment_keywords")
 async def segment_keywords(
-    file: UploadFile = File(...),
     data: Dict[Any, Any] = {}
 ):
+    image_url = data.get("image_url")
+    if not image:
+        return JSONResponse(status_code=400, content={"error": "No image provided"})
+
     keywords = data.get("keywords", [])
     if not keywords:
         return JSONResponse(status_code=400, content={"error": "No keywords provided"})
 
-    if file and allowed_file(file.filename):
-        uid = make_id("lyr")
-        run_folder = os.path.join(OUTPUT_DIR, uid)
-        os.makedirs(run_folder, exist_ok=True)
+    uid = make_id("lyr")
+    run_folder = os.path.join(OUTPUT_DIR, uid)
+    os.makedirs(run_folder, exist_ok=True)
 
-        filename = f"input_{file.filename}"
-        filepath = os.path.join(run_folder, filename)
-        metapath = os.path.join(run_folder, "job.json")
+    ext = image_url.rsplit(".", 1)[-1]
+    filename = f"input_{uid}.{ext}"
+    filepath = os.path.join(run_folder, filename)
+    metapath = os.path.join(run_folder, "job.json")
 
-        with open(filepath, "wb") as f:
-            f.write(await file.read())
+    pil_img = await load_image_from_url(image_url)
+    pil_img.save(filepath)
 
-        job_data = {
-            'status': 'uploaded',
-            'progress': 0,
-            'message': 'File uploaded',
-            'filename': filename,
-            'filepath': filepath,
-            'run_folder': run_folder,
-        }
-        with open(metapath, 'w') as f:
-            json.dump(job_data, f, indent=2)
+    job_data = {
+        'status': 'uploaded',
+        'progress': 0,
+        'message': 'File uploaded',
+        'filename': filename,
+        'filepath': filepath,
+        'run_folder': run_folder,
+    }
+    with open(metapath, 'w') as f:
+        json.dump(job_data, f, indent=2)
 
-        job_id = uid
-        JOBS[job_id] = {
-            "module": "layeredsvg",
-            "callable": "run_segmentation",
-            "args": [job_id],
-            "kwargs": {'keywords_with_conf': keywords},
-            "ori_url": f'/combined_output/{filepath.replace(OUTPUT_DIR + "/", "")}',
-            "status": "queued",
-            "created_at": time.time(),
-        }
-        JOB_QUEUE.put(job_id)
-        return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
-
-    return JSONResponse(status_code=400, content={"error": "Invalid file type"})
+    job_id = uid
+    JOBS[job_id] = {
+        "module": "layeredsvg",
+        "callable": "run_segmentation",
+        "args": [job_id],
+        "kwargs": {'keywords_with_conf': keywords},
+        "ori_url": f'/combined_output/{filepath.replace(OUTPUT_DIR + "/", "")}',
+        "status": "queued",
+        "created_at": time.time(),
+    }
+    JOB_QUEUE.put(job_id)
+    return {"job_id": job_id, "poll_url": f"/job/{job_id}/status"}
 
 @app.post("/layeredsvg/segment/{job_id}")
 async def layeredsvg_segment(
