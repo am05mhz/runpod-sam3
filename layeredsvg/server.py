@@ -136,9 +136,11 @@ def run_segmentation(run_id, **kwargs):
             status['status'] = 'segmenting'
             status['progress'] = 5
             status['message'] = 'Starting segmentation...'
+            keywords_with_conf = status.get('keywords_with_conf', [])
 
         else:
             status = loadFromFile(os.path.join(OUTPUT_DIR, run_id, "job.json"))
+            keywords_with_conf = kwargs.get('keywords_with_conf', [])
 
         main_v13 = get_main_v13()
 
@@ -146,8 +148,6 @@ def run_segmentation(run_id, **kwargs):
             if __name__ == "__main__":
                 status['progress'] = pct
                 status['message'] = msg
-
-        keywords_with_conf = status.get('keywords_with_conf', [])
 
         layers_info = main_v13.segment_keywords_v13(
             status['filepath'],
@@ -190,12 +190,14 @@ def run_vectorization(run_id, **kwargs):
             status['phase'] = 'vectorize'
             status['progress'] = 5
             status['message'] = 'Starting vectorization...'
+            selected_layers = status.get('selected_layers', [])
+            quality = status.get('quality', 'fast')
 
         else:
             status = loadFromFile(os.path.join(OUTPUT_DIR, run_id, "job.json"))
+            selected_layers = kwargs.get('selected_layers', [])
+            quality = kwargs.get('quality', 'fast')
 
-        selected_layers = status.get('selected_layers', [])
-        quality = status.get('quality', 'fast')
 
         # Load config
         main_v13 = get_main_v13()
