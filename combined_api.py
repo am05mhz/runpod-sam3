@@ -210,6 +210,13 @@ async def worker_loop(worker_idx: int = 0):
                                 if png and os.path.exists(png):
                                     job["png_url"] = f"/combined_output/{os.path.basename(png)}"
 
+                                if result["status"] == "completed" and job["module"] == "layeredsvg":
+                                    job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
+                                    job_data['result_svg'] = result.get("result_svg")
+                                    job_data['status'] = job["status"]
+                                    job_data["result_layers"] = result.get("result_layers", [])
+                                    saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
+                                    
                 except Exception as e:
                     job["status"] = "error"
                     job["error"] = str(e)
@@ -614,7 +621,28 @@ async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
 async def job_status(job_id: str):
     job = JOBS.get(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        uid = job_id
+
+        run_folder = os.path.join(OUTPUT_DIR, uid)
+        if not os.path.isdir(run_folder):
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        svg_out = os.path.join(OUTPUT_DIR, f"{uid}_output.svg")
+        png_out = os.path.join(OUTPUT_DIR, f"{uid}_output.png")
+
+        metapath = os.path.join(run_folder, "job.json")
+        job_data = loadFromFile(metapath)
+
+        inp = job_data['filepath']
+        job = {
+            "module": "layeredsvg",
+            "status": job_data.get('status', 'error'),
+            "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+            "svg_url": svg_out,
+            "png_url": png_out,
+            "error": None,
+        }
+        
     return {
         "job_id": job_id,
         "module": job.get("module"),

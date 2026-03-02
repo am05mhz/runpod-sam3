@@ -222,7 +222,7 @@ async def run_sam_inference(
                 # Post-process to get masks & boxes
                 results = hf_sam3_processor.post_process_instance_segmentation(
                     outputs,
-                    threshold=threshold,                          # score threshold
+                    threshold=threshold,                    # score threshold
                     mask_threshold=0.8,                     # binarize mask
                     target_sizes=hf_inputs.get("original_sizes").tolist()
                 )[0]  # first image only

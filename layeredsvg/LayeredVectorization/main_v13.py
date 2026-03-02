@@ -40,6 +40,12 @@ import requests
 import pydiffvg
 import yaml
 
+from transformers import Sam3Model, Sam3Processor, Sam3TrackerModel, Sam3TrackerProcessor
+from io import BytesIO
+import traceback
+from vectorize_layer_v11 import vectorize_single_layer
+from scipy import ndimage
+import cairosvg
 
 # Resolution for SDXL
 V13_RESOLUTION = 1024
@@ -52,7 +58,7 @@ V13_RESOLUTION = 1024
 # SAM3 global model holders (loaded on demand, unloaded for VRAM management)
 SAM3_MODEL = None
 SAM3_PROCESSOR = None
-
+SAM3_TRACKER = None
 
 # ============================================================================
 # Utility functions
@@ -98,7 +104,6 @@ def clear_gpu_memory():
 
 def image_to_base64_ollama(image):
     """Convert PIL Image to base64 string for Ollama."""
-    from io import BytesIO
     if isinstance(image, np.ndarray):
         image = Image.fromarray(image)
     buffered = BytesIO()
@@ -139,20 +144,25 @@ def image_to_base64_ollama(image):
 # SAM3 Model Management
 # ============================================================================
 
-def load_sam3_model(device):
+def load_sam3_model(device, tracker = False):
     """Load SAM3 model on demand."""
-    global SAM3_MODEL, SAM3_PROCESSOR
-    if SAM3_MODEL is not None:
+    global SAM3_MODEL, SAM3_PROCESSOR, SAM3_TRACKER
+    if SAM3_MODEL is not None and SAM3_TRACKER == tracker:
         return True
     try:
-        from transformers import Sam3Model, Sam3Processor
+        unload_sam3_model()
         print("  Loading SAM3 model (facebook/sam3)...")
-        SAM3_PROCESSOR = Sam3Processor.from_pretrained("facebook/sam3")
-        SAM3_MODEL = Sam3Model.from_pretrained("facebook/sam3").to(device)
+        SAM3_TRACKER = tracker
+        if tracker:
+            SAM3_PROCESSOR = Sam3TrackerProcessor.from_pretrained("facebook/sam3")
+            SAM3_MODEL = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
+        else:
+            SAM3_PROCESSOR = Sam3Processor.from_pretrained("facebook/sam3")
+            SAM3_MODEL = Sam3Model.from_pretrained("facebook/sam3").to(device)
+
         print("  SAM3 model loaded successfully!")
         return True
     except Exception as e:
-        import traceback
         traceback.print_exc()
         print(f"  Error loading SAM3 model: {e}")
         return False
@@ -160,7 +170,7 @@ def load_sam3_model(device):
 
 def unload_sam3_model():
     """Unload SAM3 model to free VRAM."""
-    global SAM3_MODEL, SAM3_PROCESSOR
+    global SAM3_MODEL, SAM3_PROCESSOR, SAM3_TRACKER
     if SAM3_MODEL is not None:
         print("  Unloading SAM3 model...")
         try:
@@ -171,6 +181,7 @@ def unload_sam3_model():
         del SAM3_PROCESSOR
         SAM3_MODEL = None
         SAM3_PROCESSOR = None
+        SAM3_TRACKER = None
         gc.collect()
         gc.collect()
         clear_gpu_memory()
@@ -311,9 +322,6 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
     if progress_cb:
         progress_cb(10, "Loading segmentation model...")
 
-    if not load_sam3_model(device):
-        raise RuntimeError("Failed to load SAM3 model")
-
     # Load and resize image
     image_pil = Image.open(image_path).convert('RGB')
     orig_w, orig_h = image_pil.size
@@ -338,7 +346,9 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
     n_keywords = len(keywords_with_conf)
 
     for i, kw_conf in enumerate(keywords_with_conf):
-        keyword = kw_conf['keyword']
+        keyword = kw_conf.get('keyword')
+        box = kw_conf.get('box')
+        points = kw_conf.get('points')
         confidence = kw_conf.get('confidence', 0.2)
 
         pct = 15 + int(60 * i / max(n_keywords, 1))
@@ -348,17 +358,6 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         print(f"  [{i+1}/{n_keywords}] Segmenting '{keyword}' (confidence={confidence})...")
 
         try:
-            model_inputs = SAM3_PROCESSOR(
-                images=working_pil,
-                text=keyword,
-                return_tensors="pt"
-            )
-            # manually move every tensor to device
-            model_inputs = {k: v.to(SAM3_MODEL.device) for k, v in model_inputs.items() if hasattr(v, "to")}
-
-            with torch.no_grad():
-                inference_output = SAM3_MODEL(**model_inputs)
-
             # Get original_sizes from inputs if available
             target_sizes = None
             if hasattr(model_inputs, 'get') and model_inputs.get("original_sizes") is not None:
@@ -366,15 +365,55 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
             else:
                 target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
 
-            processed_results = SAM3_PROCESSOR.post_process_instance_segmentation(
-                inference_output,
-                threshold=confidence,
-                mask_threshold=0.5,
-                target_sizes=target_sizes
-            )[0]
+            if keyword is not None or (box is None and points is None):
+                if not load_sam3_model(device):
+                    raise RuntimeError("Failed to load SAM3 model")
 
-            raw_masks = processed_results['masks'].cpu().numpy()
-            raw_scores = processed_results['scores'].cpu().numpy().tolist()
+                model_inputs = SAM3_PROCESSOR(
+                    images=working_pil,
+                    text=keyword,
+                    input_boxes=[[box]] if box else None,
+                    input_boxes_labels=[[1]] if box else None,
+                    return_tensors="pt"
+                )
+                # manually move every tensor to device
+                model_inputs = {k: v.to(SAM3_MODEL.device) for k, v in model_inputs.items() if hasattr(v, "to")}
+
+                with torch.no_grad():
+                    inference_output = SAM3_MODEL(**model_inputs)
+
+                processed_results = SAM3_PROCESSOR.post_process_instance_segmentation(
+                    inference_output,
+                    threshold=confidence,
+                    mask_threshold=0.5,
+                    target_sizes=target_sizes
+                )[0]
+                raw_masks = processed_results['masks'].cpu().numpy()
+                raw_scores = processed_results['scores'].cpu().numpy().tolist()
+
+            else:
+                if not load_sam3_model(device, tracker = True):
+                    raise RuntimeError("Failed to load SAM3 model")
+
+                labels = [1] * len(points) if points else None
+                model_inputs = SAM3_PROCESSOR(
+                    images=working_pil,
+                    input_points=[[points]] if points else None,
+                    input_labels=[[labels]] if points else None,
+                    input_boxes=[[box]] if box else None,
+                    return_tensors="pt"
+                )
+                # manually move every tensor to device
+                model_inputs = {k: v.to(SAM3_MODEL.device) for k, v in model_inputs.items() if hasattr(v, "to")}
+
+                with torch.no_grad():
+                    inference_output = SAM3_MODEL(**model_inputs)
+
+                processed_results = {
+                    "masks" : SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0]
+                }
+                raw_masks = processed_results['masks'].cpu().numpy()
+                raw_scores = None
 
             if raw_masks.ndim == 3 and raw_masks.shape[0] > 0:
                 # Combine masks into one per keyword, filtering by score
@@ -415,7 +454,6 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
 
         except Exception as e:
             print(f"    -> Error segmenting '{keyword}': {e}")
-            import traceback
             traceback.print_exc()
 
     if progress_cb:
@@ -550,8 +588,6 @@ def vectorize_layer_with_v11_pipeline(
     run_sds: bool = True
 ) -> str:
     """Vectorize a single layer using the V11 custom pipeline (app3 quality)."""
-    from vectorize_layer_v11 import vectorize_single_layer
-
     layer_output_dir = f"./workdir/{v11_output_name}_layer_{layer_id}"
     os.makedirs(layer_output_dir, exist_ok=True)
 
@@ -759,7 +795,6 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
             progress_cb(10, f"Filling {uncovered_count} gap pixels...")
         print(f"  Filling {uncovered_count} uncovered pixels...")
 
-        from scipy import ndimage
         min_distances = np.full((H, W), np.inf, dtype=np.float32)
         nearest_layer_idx = np.zeros((H, W), dtype=np.int32)
 
@@ -831,7 +866,6 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
 
         except Exception as e:
             print(f"    Error vectorizing layer {layer_id}: {e}")
-            import traceback
             traceback.print_exc()
 
         torch.cuda.empty_cache()
@@ -887,7 +921,6 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
     # Render PNG
     print("Rendering composite PNG...")
     try:
-        import cairosvg
         png_path = os.path.join(output_dir, "final.png")
         cairosvg.svg2png(url=final_svg_path, write_to=png_path)
 
