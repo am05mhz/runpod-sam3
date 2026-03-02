@@ -151,6 +151,13 @@ def run_segmentation(run_id, **kwargs):
             status['progress'] = 100
             status['message'] = f'Segmented {len(layers_info)} layers'
             status['n_layers'] = len(layers_info)
+        else:
+            return {
+                'status': 'layers_ready',
+                'n_layers': len(layers_info),
+                'layers_info': layers_info,
+                'message': f'Segmented {len(layers_info)} layers'
+            }
 
     except Exception as e:
         traceback.print_exc()

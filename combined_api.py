@@ -17,6 +17,7 @@ import asyncio
 import shutil
 import traceback
 from pathlib import Path
+from typing import Dict, Any
 import uvicorn
 import time
 import threading
@@ -184,20 +185,26 @@ async def worker_loop(worker_idx: int = 0):
                         png = job.get("png_out")
                         if result is not None:
                             job["status"] = result.get("status", "error")
-                            res_svg = result.get("result_svg", None)
-                            res_png = result.get("result_png", None)
-                            if res_svg is not None and os.path.exists(res_svg):
-                                shutil.copyfile(res_svg, svg)
-                            if res_png is not None and os.path.exists(res_png):
-                                shutil.copyfile(res_png, png)
+                            if job["status"] == "layers_ready":
+                                job["layers_info"] = result.get("layers_info", [])
+                                metapath = os.path.join(OUTPUT_DIR, job_id, "job.json")
+                                with open(metapath, 'w') as f:
+                                    json.dump(job, f, indent=2)
+                            else:
+                                res_svg = result.get("result_svg", None)
+                                res_png = result.get("result_png", None)
+                                if res_svg is not None and os.path.exists(res_svg):
+                                    shutil.copyfile(res_svg, svg)
+                                if res_png is not None and os.path.exists(res_png):
+                                    shutil.copyfile(res_png, png)
 
-                        if svg and os.path.exists(svg):
-                            job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
-                        else:
-                            job["status"] = "error" if svg is None else "completed"
+                                if svg and os.path.exists(svg):
+                                    job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
+                                else:
+                                    job["status"] = "error" if svg is None else "completed"
 
-                        if png and os.path.exists(png):
-                            job["png_url"] = f"/combined_output/{os.path.basename(png)}"
+                                if png and os.path.exists(png):
+                                    job["png_url"] = f"/combined_output/{os.path.basename(png)}"
 
                 except Exception as e:
                     job["status"] = "error"
@@ -248,6 +255,25 @@ async def layeredsvg_home(request: Request):
 @app.get("/longcat")
 async def longcat_home(request: Request):
     return templates.TemplateResponse("longcat.html", {"request": request})
+
+@app.get("/layeredsvg/layers/{job_id}")
+async def get_layers(job_id: str):
+    run_folder = os.path.join(OUTPUT_DIR, job_id)
+    if not os.path.isdir(run_folder):
+        return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
+
+    metapath = os.path.join(run_folder, "job.json")
+    with open(metapath, 'r') as f:
+        status = json.load(f)
+
+    if status['status'] not in ('layers_ready', 'vectorizing', 'completed'):
+        return JSONResponse(status_code=400, content={"error": "Layers not ready yet"})
+
+    return {
+        'layers': status.get('layers_info', []),
+        'n_layers': status.get('n_layers', 0),
+        'merge_preview_url': 'merge_preview.png',
+    }
 
 @app.get("/longcat/edit")
 async def longcat_home(request: Request):
@@ -422,7 +448,12 @@ async def bezier_upload(
 @app.post("/segment_keywords")
 async def segment_keywords(
     file: UploadFile = File(...),
+    data: Dict[Any, Any]
 ):
+    keywords = data.get("keywords", [])
+    if not keywords:
+        return JSONResponse(status_code=400, content={"error": "No keywords provided"})
+
     if file and allowed_file(file.filename):
         uid = make_id("lyr")
         run_folder = os.path.join(OUTPUT_DIR, uid)
@@ -455,6 +486,7 @@ async def segment_keywords(
                 "run_folder": run_folder,
                 'filepath': filepath,
                 'filename': filename,
+                'keywords_with_conf': keywords,
             },
             "ori_url": f'/combined_output/{filepath.replace(OUTPUT_DIR + "/", "")}',
             "status": "queued",
@@ -467,14 +499,24 @@ async def segment_keywords(
 
 @app.post("/layeredsvg/segment/{job_id}")
 async def layeredsvg_segment(
-    job_id: str
+    job_id: str,
+    data: Dict[Any, Any]
 ):
     uid = job_id
+
+    keywords = data.get("keywords", [])
+    if not keywords:
+        return JSONResponse(status_code=400, content={"error": "No keywords provided"})
+
     run_folder = os.path.join(OUTPUT_DIR, uid)
+    if not os.path.isdir(run_folder):
+        return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
+
     metapath = os.path.join(run_folder, "job.json")
     with open(metapath, 'r') as f:
         job_data = json.load(f)
 
+    job_data['keywords_with_conf'] = keywords
     inp = job_data['filepath']
     JOBS[job_id] = {
         "module": "layeredsvg",
@@ -522,7 +564,7 @@ async def layeredsvg_upload(file: UploadFile = File(...)):
 
 @app.post("/layeredsvg/vectorize/{job_id}")
 async def vectorize_confirmed(
-    job_id: str
+    job_id: str,
     # file: UploadFile = File(...),
     quality: str = Form("fast"),
     # max_layers: str = Form("10"),
