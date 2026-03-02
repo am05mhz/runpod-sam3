@@ -107,126 +107,126 @@ async def worker_loop(worker_idx: int = 0):
 
         job["status"] = "started"
         try:
-            async with GPU_SEMAPHORE:
-                job["status"] = "processing"
-                try:
-                    module_key = job.get("module")
-                    func_name = job.get("callable")
+            # Acquire the threading semaphore via executor to avoid blocking the
+            # asyncio event loop. This ensures only one job holds the semaphore
+            # at a time across threads and that GPU work does not run in parallel.
+            await loop.run_in_executor(None, GPU_SEMAPHORE.acquire)
+            job["status"] = "processing"
+            try:
+                module_key = job.get("module")
+                func_name = job.get("callable")
 
-                    if module_key == "longcat":
-                        # fn = getattr(longcat_utils, func_name, None)
+                if module_key == "longcat":
+                    raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
+                else:
+                    module_path = COMPONENT_PATHS.get(module_key)
+                    if not module_path or not os.path.exists(module_path):
+                        raise RuntimeError(f"Module path not found for '{module_key}'")
 
-                        # if fn is None:
+                    module = import_module_from_path(f"{module_key}_mod", module_path)
+
+                    fn = getattr(module, func_name, None)
+                    if fn is None:
+                        for alt in ("process_image_sam3", "process_image", "run_bezier_splatting", "run_vectorization"):
+                            if hasattr(module, alt):
+                                fn = getattr(module, alt)
+                                break
+                    if fn is None:
                         raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
 
-                    else:
-                        module_path = COMPONENT_PATHS.get(module_key)
-                        if not module_path or not os.path.exists(module_path):
-                            raise RuntimeError(f"Module path not found for '{module_key}'")
+                module_args = job.get("args", [])
+                module_kwargs = job.get("kwargs", {})
 
-                        module = import_module_from_path(f"{module_key}_mod", module_path)
-
-                        fn = getattr(module, func_name, None)
-                        if fn is None:
-                            for alt in ("process_image_sam3", "process_image", "run_bezier_splatting", "run_vectorization"):
-                                if hasattr(module, alt):
-                                    fn = getattr(module, alt)
-                                    break
-                        if fn is None:
-                            raise RuntimeError(f"No callable found for job {job_id} in {module_key}")
-
-                    module_args = job.get("args", [])
-                    module_kwargs = job.get("kwargs", {})
-
-                    def _call_target():
+                def _call_target():
+                    try:
+                        return fn(*module_args, **module_kwargs)
+                    except TypeError as te:
+                        msg = str(te).lower()
                         try:
-                            return fn(*module_args, **module_kwargs)
-                        except TypeError as te:
-                            msg = str(te).lower()
-                            try:
-                                sig = inspect.signature(fn)
-                                params = sig.parameters
-                                accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+                            sig = inspect.signature(fn)
+                            params = sig.parameters
+                            accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
 
-                                # If the function accepts **kwargs, re-try with full kwargs (shouldn't normally fail)
-                                if accepts_var_kw:
-                                    try:
-                                        return fn(*module_args, **module_kwargs)
-                                    except TypeError:
-                                        pass
-
-                                # Only filter kwargs when the error is about unexpected keyword arguments
-                                if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
-                                    allowed = {k: v for k, v in module_kwargs.items() if k in params}
-                                    if allowed:
-                                        return fn(*module_args, **allowed)
-                                    else:
-                                        return fn(*module_args)
-
-                                # For other TypeErrors (likely positional/arity issues), try calling without kwargs
-                                return fn(*module_args)
-                            except Exception as sig_error:
-                                print(f"Warning: inspect.signature failed: {sig_error}")
-                                print(f"Original TypeError: {te}")
-                                # As a last resort try original call then try without kwargs
+                            if accepts_var_kw:
                                 try:
                                     return fn(*module_args, **module_kwargs)
                                 except TypeError:
-                                    print("Fallback: calling without kwargs")
+                                    pass
+
+                            if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
+                                allowed = {k: v for k, v in module_kwargs.items() if k in params}
+                                if allowed:
+                                    return fn(*module_args, **allowed)
+                                else:
                                     return fn(*module_args)
 
-                    result = await asyncio.to_thread(_call_target)
-                    job["result"] = result
+                            return fn(*module_args)
+                        except Exception as sig_error:
+                            print(f"Warning: inspect.signature failed: {sig_error}")
+                            print(f"Original TypeError: {te}")
+                            try:
+                                return fn(*module_args, **module_kwargs)
+                            except TypeError:
+                                print("Fallback: calling without kwargs")
+                                return fn(*module_args)
 
-                    if module_key == "longcat":
-                        if result is not None:
-                            job["status"] = result.get("status", "error")
-                            job["png_out"] = result.get("output", None)
+                result = await asyncio.to_thread(_call_target)
+                job["result"] = result
 
-                    else:
-                        svg = job.get("svg_out")
-                        png = job.get("png_out")
-                        if result is not None:
-                            job["status"] = result.get("status", "error")
-                            if job["status"] == "layers_ready":
-                                job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
-                                job_data['keywords'] = module_kwargs.get('keywords_with_conf', [])
-                                job_data['status'] = job['status']
-                                job_data["layers_info"] = result.get("layers_info", [])
-                                saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
+                if module_key == "longcat":
+                    if result is not None:
+                        job["status"] = result.get("status", "error")
+                        job["png_out"] = result.get("output", None)
+                else:
+                    svg = job.get("svg_out")
+                    png = job.get("png_out")
+                    if result is not None:
+                        job["status"] = result.get("status", "error")
+                        if job["status"] == "layers_ready":
+                            job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
+                            job_data['keywords'] = module_kwargs.get('keywords_with_conf', [])
+                            job_data['status'] = job['status']
+                            job_data["layers_info"] = result.get("layers_info", [])
+                            saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
+                        else:
+                            res_svg = result.get("result_svg", None)
+                            res_png = result.get("result_png", None)
+                            if res_svg is not None and os.path.exists(res_svg):
+                                shutil.copyfile(res_svg, svg)
+                            if res_png is not None and os.path.exists(res_png):
+                                shutil.copyfile(res_png, png)
+
+                            if svg and os.path.exists(svg):
+                                job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
                             else:
-                                res_svg = result.get("result_svg", None)
-                                res_png = result.get("result_png", None)
-                                if res_svg is not None and os.path.exists(res_svg):
-                                    shutil.copyfile(res_svg, svg)
-                                if res_png is not None and os.path.exists(res_png):
-                                    shutil.copyfile(res_png, png)
+                                job["status"] = "error" if svg is None else "completed"
 
-                                if svg and os.path.exists(svg):
-                                    job["svg_url"] = f"/combined_output/{os.path.basename(svg)}"
-                                else:
-                                    job["status"] = "error" if svg is None else "completed"
+                            if png and os.path.exists(png):
+                                job["png_url"] = f"/combined_output/{os.path.basename(png)}"
 
-                                if png and os.path.exists(png):
-                                    job["png_url"] = f"/combined_output/{os.path.basename(png)}"
+                            if result["status"] == "completed" and job["module"] == "layeredsvg":
+                                job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
+                                job_data['result_svg'] = result.get("result_svg")
+                                job_data['status'] = job["status"]
+                                job_data["result_layers"] = result.get("result_layers", [])
+                                saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
 
-                                if result["status"] == "completed" and job["module"] == "layeredsvg":
-                                    job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
-                                    job_data['result_svg'] = result.get("result_svg")
-                                    job_data['status'] = job["status"]
-                                    job_data["result_layers"] = result.get("result_layers", [])
-                                    saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
-
-                except Exception as e:
-                    job["status"] = "error"
-                    job["error"] = str(e)
-                    traceback.print_exc()
-                finally:
-                    if 'module' in locals() and hasattr(module, "unload_supersvg_model"):
-                        try:
-                            getattr(module, "unload_supersvg_model")()
-                        except Exception:
-                            pass
+            except Exception as e:
+                job["status"] = "error"
+                job["error"] = str(e)
+                traceback.print_exc()
+            finally:
+                # attempt to call module cleanup if present
+                if 'module' in locals() and hasattr(module, "unload_supersvg_model"):
+                    try:
+                        getattr(module, "unload_supersvg_model")()
+                    except Exception:
+                        pass
+                # Release the threading semaphore so next job can proceed
+                try:
+                    GPU_SEMAPHORE.release()
+                except Exception:
+                    pass
         except asyncio.CancelledError:
             job["status"] = "cancelled"
             raise

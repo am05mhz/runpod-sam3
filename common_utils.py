@@ -18,7 +18,9 @@ BASE_DIR = Path(__file__).parent
 # Job system shared data (importable)
 JOB_QUEUE = queue.Queue()  # Thread-safe queue for cross-thread communication
 JOBS = {}
-GPU_SEMAPHORE = asyncio.Semaphore(1)  # serialize GPU-heavy jobs
+# Use a threading.Semaphore so the semaphore works correctly across threads
+# and prevents concurrent GPU work when worker loop uses thread executors.
+GPU_SEMAPHORE = threading.Semaphore(1)  # serialize GPU-heavy jobs
 WORKER_TASKS = []
 
 WIDTH = 224
