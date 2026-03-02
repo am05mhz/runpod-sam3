@@ -10,7 +10,7 @@ import json
 import aiohttp
 from pathlib import Path
 from fastapi import HTTPException
-from pil impoer Image
+from PIL import Image
 
 BASE_DIR = Path(__file__).parent
 

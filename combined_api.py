@@ -467,7 +467,7 @@ async def segment_keywords(
     data: Dict[Any, Any] = {}
 ):
     image_url = data.get("image_url")
-    if not image:
+    if not image_url:
         return JSONResponse(status_code=400, content={"error": "No image provided"})
 
     keywords = data.get("keywords", [])
