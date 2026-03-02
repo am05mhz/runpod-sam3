@@ -704,7 +704,7 @@ async function startVectorization() {
     vectorizeBtn.textContent = 'Starting...';
 
     try {
-        const response = await fetch(`/vectorize/${currentRunId}`, {
+        const response = await fetch(`/layeredsvg/vectorize/${currentRunId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
