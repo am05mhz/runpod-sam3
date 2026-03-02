@@ -269,9 +269,10 @@ def run_vectorization(run_id, **kwargs):
         else:
             return {
                 'status': 'completed',
-                'n_layers': result['n_layers'],
-                'result_svg': final_svg if os.path.exists(final_svg) else None,
-                'result_png': fullsize_png if os.path.exists(fullsize_png) else None,
+                'n_vectorized': result.get('n_layers', 0),
+                'result_svg': result.get('svg_path', ''),
+                'result_png': None,
+                'result_layers': result.get('layers', [])
             }
 
     except Exception as e:
