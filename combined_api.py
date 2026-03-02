@@ -216,7 +216,7 @@ async def worker_loop(worker_idx: int = 0):
                                     job_data['status'] = job["status"]
                                     job_data["result_layers"] = result.get("result_layers", [])
                                     saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
-                                    
+
                 except Exception as e:
                     job["status"] = "error"
                     job["error"] = str(e)
@@ -598,6 +598,10 @@ async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
 
     metapath = os.path.join(run_folder, "job.json")
     job_data = loadFromFile(metapath)
+
+    # reset status so that when loaded, it does not get the old status
+    job_data['status'] = "queued"
+    saveToFile(metapath, job_data)
 
     inp = job_data['filepath']
     JOBS[job_id] = {

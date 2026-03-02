@@ -351,20 +351,15 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         points = kw_conf.get('points')
         confidence = kw_conf.get('confidence', 0.2)
 
+        name = keyword if keyword is not None else ('Box' if box is not None else 'Point')
+
         pct = 15 + int(60 * i / max(n_keywords, 1))
         if progress_cb:
-            progress_cb(pct, f"Segmenting '{keyword}' ({i+1}/{n_keywords})...")
+            progress_cb(pct, f"Segmenting '{name}' ({i+1}/{n_keywords})...")
 
-        print(f"  [{i+1}/{n_keywords}] Segmenting '{keyword}' (confidence={confidence})...")
+        print(f"  [{i+1}/{n_keywords}] Segmenting '{name}' (confidence={confidence})...")
 
         try:
-            # Get original_sizes from inputs if available
-            target_sizes = None
-            if hasattr(model_inputs, 'get') and model_inputs.get("original_sizes") is not None:
-                target_sizes = model_inputs.get("original_sizes").tolist()
-            else:
-                target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
-
             if keyword is not None or (box is None and points is None):
                 if not load_sam3_model(device):
                     raise RuntimeError("Failed to load SAM3 model")
@@ -381,6 +376,13 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
 
                 with torch.no_grad():
                     inference_output = SAM3_MODEL(**model_inputs)
+
+                # Get original_sizes from inputs if available
+                target_sizes = None
+                if hasattr(model_inputs, 'get') and model_inputs.get("original_sizes") is not None:
+                    target_sizes = model_inputs.get("original_sizes").tolist()
+                else:
+                    target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
 
                 processed_results = SAM3_PROCESSOR.post_process_instance_segmentation(
                     inference_output,
@@ -408,6 +410,13 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
 
                 with torch.no_grad():
                     inference_output = SAM3_MODEL(**model_inputs)
+
+                # Get original_sizes from inputs if available
+                target_sizes = None
+                if hasattr(model_inputs, 'get') and model_inputs.get("original_sizes") is not None:
+                    target_sizes = model_inputs.get("original_sizes").tolist()
+                else:
+                    target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
 
                 processed_results = {
                     "masks" : SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0]
