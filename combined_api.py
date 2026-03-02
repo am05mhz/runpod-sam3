@@ -190,12 +190,9 @@ async def worker_loop(worker_idx: int = 0):
                             if job["status"] == "layers_ready":
                                 job_data = loadFromFile(os.path.join(OUTPUT_DIR, job_id, "job.json"))
                                 job_data['keywords'] = module_kwargs.get('keywords_with_conf', [])
+                                job_data['status'] = job['status']
                                 job_data["layers_info"] = result.get("layers_info", [])
                                 saveToFile(os.path.join(OUTPUT_DIR, job_id, "job.json"), job_data)
-
-                                metapath = os.path.join(OUTPUT_DIR, job_id, "job.json")
-                                with open(metapath, 'w') as f:
-                                    json.dump(job, f, indent=2)
                             else:
                                 res_svg = result.get("result_svg", None)
                                 res_png = result.get("result_png", None)
@@ -268,11 +265,9 @@ async def get_layers(job_id: str):
     if not os.path.isdir(run_folder):
         return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
 
-    metapath = os.path.join(run_folder, "job.json")
-    with open(metapath, 'r') as f:
-        status = json.load(f)
+    status = loadFromFile(os.path.join(run_folder, "job.json"))
 
-    if status['status'] not in ('layers_ready', 'vectorizing', 'completed'):
+    if status.get('status') not in ('layers_ready', 'vectorizing', 'completed'):
         return JSONResponse(status_code=400, content={"error": "Layers not ready yet"})
 
     return {
@@ -280,6 +275,21 @@ async def get_layers(job_id: str):
         'n_layers': status.get('n_layers', 0),
         'merge_preview_url': 'merge_preview.png',
     }
+
+@app.get("/layeredsvg/layer_asset/{job_id}/{filename:path}")
+async def serve_layer_asset(job_id: str, filename: str):
+    run_folder = os.path.join(OUTPUT_DIR, job_id)
+    if not os.path.isdir(run_folder):
+        return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
+
+    status = loadFromFile(os.path.join(run_folder, "job.json"))
+
+    layers_dir = os.path.join(status.get('run_folder'), 'layers')
+
+    full_path = os.path.join(layers_dir, filename)
+    if not os.path.exists(full_path):
+        return JSONResponse(status_code=404, content={"error": "Not found"})
+    return FileResponse(full_path)
 
 @app.get("/longcat/edit")
 async def longcat_home(request: Request):
@@ -514,8 +524,7 @@ async def layeredsvg_segment(
         return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
 
     metapath = os.path.join(run_folder, "job.json")
-    with open(metapath, 'r') as f:
-        job_data = json.load(f)
+    job_data = loadFromFile(metapath)
 
     inp = job_data['filepath']
     JOBS[job_id] = {
@@ -563,45 +572,29 @@ async def layeredsvg_upload(file: UploadFile = File(...)):
     return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 
 @app.post("/layeredsvg/vectorize/{job_id}")
-async def vectorize_confirmed(
-    job_id: str,
-    # file: UploadFile = File(...),
-    quality: str = Form("fast"),
-    # max_layers: str = Form("10"),
-    # n_depth_clusters: str = Form("3"),
-    # moge_version: str = Form("v2"),
-    # moge_resolution: str = Form("High"),
-    # mask_dilation_px: str = Form("3"),
-    # background_method: str = Form("depth")
-):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file")
-    uid = make_id("lyr")
-    ext = file.filename.rsplit(".", 1)[-1]
-    run_folder = os.path.join(OUTPUT_DIR, uid)
-    filename = f"input_{file.filename}"
-    os.makedirs(run_folder, exist_ok=True)
-    inp = os.path.join(run_folder, f"input_{file.filename}")
-    svg_out = os.path.join(OUTPUT_DIR, f"{uid}_output.svg")
-    png_out = os.path.join(OUTPUT_DIR, f"{uid}_output.png")
-    with open(inp, "wb") as f:
-        f.write(await file.read())
+async def vectorize_confirmed(job_id: str, Dict[Any, Any]):
+    uid = job_id
 
-    job_id = uid
+    selected_layers = data.get("selected_layers")
+    quality = data.get("guality", "fast")
+    if not selected_layers:
+        return JSONResponse(status_code=400, content={"error": "No layers selected"})
+
+    run_folder = os.path.join(OUTPUT_DIR, uid)
+    if not os.path.isdir(run_folder):
+        return JSONResponse(status_code=400, content={"error": "Invalid run ID"})
+
+    metapath = os.path.join(run_folder, "job.json")
+    job_data = loadFromFile(metapath)
+
+    inp = job_data['filepath']
     JOBS[job_id] = {
         "module": "layeredsvg",
         "callable": "run_vectorization",
         "args": [job_id],
         "kwargs": {
-            "run_folder": run_folder,
-            "filename": filename,
+            "selected_layers": selected_layers,
             "quality": quality,
-            "max_layers": max_layers,
-            "n_depth_clusters": n_depth_clusters,
-            "moge_version": moge_version,
-            "moge_resolution": moge_resolution,
-            "mask_dilation_px": mask_dilation_px,
-            "background_method": background_method,
         },
         "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
         "svg_out": svg_out,

@@ -393,10 +393,6 @@ if __name__ == "__main__":
             return JSONResponse(status_code=404, content={"error": "Not found"})
         return FileResponse(full_path)
 
-    class JsonLayerConfig(BaseModel):
-        selected_layers: list[int] = []
-        quality: str = "fast"
-
     @app.post("/vectorize/{run_id}")
     async def vectorize_confirmed(run_id: str, data: Dict[Any, Any]):
         if run_id not in processing_status:

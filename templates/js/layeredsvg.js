@@ -523,7 +523,7 @@ async function showLayerReview() {
         const cacheBust = Date.now();
         const mergeLayer = allLayers.find(l => l.merge_preview_url);
         if (data.merge_preview_url) {
-            mergePreviewImg.src = `/layer_asset/${currentRunId}/${data.merge_preview_url}?t=${cacheBust}`;
+            mergePreviewImg.src = `/layeredsvg/layer_asset/${currentRunId}/${data.merge_preview_url}?t=${cacheBust}`;
             mergePreviewContainer.style.display = 'block';
         } else {
             mergePreviewContainer.style.display = 'none';
