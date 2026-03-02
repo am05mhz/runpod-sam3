@@ -593,7 +593,7 @@ function createLayerCard(layer, cacheBust) {
     // Preview image
     const img = document.createElement('img');
     if (layer.preview_url) {
-        img.src = `/layer_asset/${currentRunId}/${layer.preview_url}?t=${cacheBust}`;
+        img.src = `/layeredsvg/layer_asset/${currentRunId}/${layer.preview_url}?t=${cacheBust}`;
     }
     img.alt = layer.keyword || `Layer ${layer.layer_id}`;
     img.loading = 'lazy';

@@ -572,7 +572,7 @@ async def layeredsvg_upload(file: UploadFile = File(...)):
     return JSONResponse(status_code=400, content={"error": "Invalid file type"})
 
 @app.post("/layeredsvg/vectorize/{job_id}")
-async def vectorize_confirmed(job_id: str, Dict[Any, Any]):
+async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
     uid = job_id
 
     selected_layers = data.get("selected_layers")
