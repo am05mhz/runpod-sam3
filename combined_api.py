@@ -448,7 +448,7 @@ async def bezier_upload(
 @app.post("/segment_keywords")
 async def segment_keywords(
     file: UploadFile = File(...),
-    data: Dict[Any, Any]
+    data: Dict[Any, Any] = {}
 ):
     keywords = data.get("keywords", [])
     if not keywords:
@@ -522,7 +522,7 @@ async def layeredsvg_segment(
         "module": "layeredsvg",
         "callable": "run_segmentation",
         "args": [job_id],
-        "kwargs": job_data,
+        "kwargs": {},
         "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
         "status": "queued",
         "created_at": time.time(),

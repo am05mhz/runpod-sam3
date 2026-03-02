@@ -117,6 +117,14 @@ def run_keyword_detection(run_id, **kwargs):
         if __name__ == "__main__" and run_id in processing_threads:
             processing_threads.pop(run_id, None)
 
+def loadFromFile(filepath):
+    if not os.path.exist(filepath):
+        return None
+
+    with open(filepath, 'r') as f:
+        return json.load(f)
+
+
 def run_segmentation(run_id, **kwargs):
     """Background thread: run SAM3 segmentation."""
     try:
@@ -127,7 +135,7 @@ def run_segmentation(run_id, **kwargs):
             status['message'] = 'Starting segmentation...'
 
         else:
-            status = kwargs
+            status = loadFromFile(os.path.join(OUTPUT_DIR, run_id, "job.json"))
 
         main_v13 = get_main_v13()
 
@@ -181,7 +189,7 @@ def run_vectorization(run_id, **kwargs):
             status['message'] = 'Starting vectorization...'
 
         else:
-            status = kwargs
+            status = loadFromFile(os.path.join(OUTPUT_DIR, run_id, "job.json"))
 
         selected_layers = status.get('selected_layers', [])
         quality = status.get('quality', 'fast')
