@@ -947,6 +947,7 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
 
     return {
         'svg_path': fullsize_svg_path,
+        'png_path': fullsize_png_path,
         'layers': layer_svgs,
         'n_layers': len(layer_svgs),
     }
