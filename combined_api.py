@@ -601,6 +601,7 @@ async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
 
     # reset status so that when loaded, it does not get the old status
     job_data['status'] = "queued"
+    job_data["quality"] = quality
     saveToFile(metapath, job_data)
 
     inp = job_data['filepath']
