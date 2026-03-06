@@ -94,7 +94,7 @@ RUN pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.
 #     pip install -e .    
 
 # Copy all of our files into the container
-# COPY handler.py $WORKSPACE_DIR/handler.py
+COPY handler_runpod.py $WORKSPACE_DIR/handler_runpod.py
 ADD sam3 $WORKSPACE_DIR/sam3
 ADD bezier $WORKSPACE_DIR/bezier
 ADD supersvg $WORKSPACE_DIR/supersvg

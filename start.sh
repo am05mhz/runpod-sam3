@@ -248,7 +248,7 @@ export_env_vars() {
 # Call Python handler if mode is serverless or both
 call_python_handler() {
     echo "Calling Python handler.py..."
-    python $WORKSPACE_DIR/handler.py
+    python $WORKSPACE_DIR/handler_runpod.py
 }
 
 # ---------------------------------------------------------------------------- #
