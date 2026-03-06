@@ -288,6 +288,23 @@ def detect_keywords_v13(image_path, progress_cb=None):
     print(f"  Skip detection")
     return ["the object"]
 
+def normalize_box(box, ori_width, ori_height, target_size):
+    bbox = [
+        round(box[0] * target_size / ori_width),
+        round(box[1] * target_size / ori_height),
+        round(box[2] * target_size / ori_width),
+        round(box[3] * target_size / ori_height),
+    ]
+    return bbox
+
+def normalize_points(points, ori_width, ori_height, target_size):
+    ppoints = []
+    for x, y in points:
+        ppoints.append([
+            round(points[idx][0] * target_size / ori_width),
+            round(points[idx][1] * target_size / ori_height),
+        ])
+    return ppoints
 
 # ============================================================================
 # PHASE 2: SAM3 Segmentation (~1-2 min)
@@ -350,6 +367,21 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         box = kw_conf.get('box')
         points = kw_conf.get('points')
         confidence = kw_conf.get('confidence', 0.2)
+
+        if keyword == '':
+            keyword = None  # reset if empty string
+
+        if box == '':
+            box = None  # reset if empty string
+
+        if points == '':
+            points = None  # reset if empty string
+
+        if box is not None:
+            box = normalize_box(box, orig_w, orig_h, V13_RESOLUTION)
+
+        if points is not None:
+            points = normalize_points(points, orig_w, orig_h, V13_RESOLUTION)
 
         name = keyword if keyword is not None else ('Box' if box is not None else 'Point')
 
@@ -419,12 +451,14 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
                     target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
 
                 processed_results = {
-                    "masks" : SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0]
+                    "masks": SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0]
+                    "scores": inference_output.object_score_logits,
                 }
                 raw_masks = processed_results['masks'].cpu().numpy()
-                raw_scores = None
+                raw_scores = [confidence] * raw_masks.shape[0]
+                # raw_scores = processed_results['scores'].cpu().numpy().tolist()
 
-            if raw_masks.ndim == 3 and raw_masks.shape[0] > 0:
+            if (raw_masks.ndim == 3 or raw_masks.ndim == 4) and raw_masks.shape[0] > 0:
                 # Combine masks into one per keyword, filtering by score
                 combined_mask = np.zeros((V13_RESOLUTION, V13_RESOLUTION), dtype=np.uint8)
                 best_score = 0.0
@@ -434,7 +468,7 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
                     # Skip low-score masks to avoid capturing background
                     if score < confidence:
                         continue
-                    mask_2d = raw_masks[m_idx]
+                    mask_2d = raw_masks[m_idx] if raw_masks.ndim == 3 else raw_masks[m_idx][0]
                     # Resize if needed
                     if mask_2d.shape != (V13_RESOLUTION, V13_RESOLUTION):
                         mask_2d = np.array(
@@ -459,10 +493,10 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
                 else:
                     print(f"    -> No pixels after filtering (0/{raw_masks.shape[0]} masks passed score>={confidence})")
             else:
-                print(f"    -> No masks found for '{keyword}'")
+                print(f"    -> No masks found for '{name}'")
 
         except Exception as e:
-            print(f"    -> Error segmenting '{keyword}': {e}")
+            print(f"    -> Error segmenting '{name}': {e}")
             traceback.print_exc()
 
     if progress_cb:
@@ -518,7 +552,7 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
         preview_path = os.path.join(layers_dir, f"layer_{lid}_preview.png")
         mask_path = os.path.join(layers_dir, f"layer_{lid}_mask.png")
 
-        scale = 150 / max(orig_w, orig_h)
+        scale = 300 / max(orig_w, orig_h)
         preview_rgba = cv2.resize(preview_rgba, (round(orig_w * scale), round(orig_h * scale)), interpolation=cv2.INTER_NEAREST)
 
         Image.fromarray(preview_rgba).save(preview_path)
