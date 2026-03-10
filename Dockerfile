@@ -116,8 +116,9 @@ RUN if [ ! -d "$WORKSPACE_DIR/layeredsvg" ]; then \
         echo "================================"; \
         git clone https://github.com/SZUVIZ/layered_vectorization.git layeredsvg; \
         cd "$WORKSPACE_DIR/layeredsvg"; \
-        git submodule update --init --recursive; \
+        git clone https://github.com/am05mhz/diffvg.git
         cd diffvg; \
+        git submodule update --init --recursive; \
         python setup.py install; \
     else \
         echo "layeredsvg already exists, skipping clone."; \
