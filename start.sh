@@ -67,17 +67,9 @@ setup_supersvg() {
     fi
     cd /workspace/apps
     if [ ! -d "/workspace/apps/supersvg" ]; then
-        git clone https://github.com/sjtuplayer/SuperSVG.git supersvg
-    fi
-    if [ ! -d "/workspace/apps/supersvg/DiffVG" ]; then
-        rm -r /workspace/apps/supersvg/DiffVG
+        git clone https://github.com/am05mhz/SuperSVG.git supersvg
     fi
     cd supersvg
-    git submodule update --init --recursive
-    if [ ! -d "diffvg" ]; then
-        git clone https://github.com/BachiLi/diffvg.git
-    fi
-    cd diffvg
     git submodule update --init --recursive
     cp -r /app/supersvg /workspace/apps/
     python setup.py install
@@ -114,7 +106,7 @@ setup_layeredsvg() {
         git clone https://github.com/linyq2117/SAMRefiner.git
     fi
     if [ ! -d "diffvg" ]; then
-        git clone https://github.com/BachiLi/diffvg.git
+        git clone https://github.com/am05mhz/diffvg.git
     fi
     cd diffvg
     git submodule update --init --recursive

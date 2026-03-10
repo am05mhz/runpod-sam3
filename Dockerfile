@@ -89,10 +89,6 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Install no-isolation requirements
 RUN pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.txt
 
-# RUN git clone https://github.com/facebookresearch/sam3.git && \
-#     cd sam3 && \
-#     pip install -e .    
-
 # Copy all of our files into the container
 COPY handler_runpod.py $WORKSPACE_DIR/handler_runpod.py
 ADD sam3 $WORKSPACE_DIR/sam3
