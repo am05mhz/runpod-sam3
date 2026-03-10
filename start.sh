@@ -106,8 +106,8 @@ setup_layeredsvg() {
     cd diffvg
     git submodule update --init --recursive
     cp -r /app/layeredsvg /workspace/apps/
-    cd /workspace/apps/layeredsvg
     python setup.py install
+    cd /workspace/apps/layeredsvg
     mkdir -p LayeredVectorization/checkpoints
     cd LayeredVectorization/checkpoints
     if [ ! -f "sam_vit_h_4b8939.pth" ]; then
