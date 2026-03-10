@@ -45,11 +45,10 @@ setup_sam3() {
     echo "========================================================"
     echo "installing sam3..."
     echo "========================================================"
-    source /app/venv/apps/bin/activate
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
+    if [ ! -d "$RP_WORKSPACE/apps" ]; then
+        mkdir -p "$RP_WORKSPACE/apps"
     fi
-    cp -r /app/sam3 /workspace/apps/
+    cp -r /app/sam3 $RP_WORKSPACE/apps/
 }
 
 setup_supersvg() {
@@ -57,19 +56,10 @@ setup_supersvg() {
     echo "========================================================"
     echo "installing supersvg..."
     echo "========================================================"
-    source /app/venv/apps/bin/activate
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
+    if [ ! -d "$RP_WORKSPACE/apps" ]; then
+        mkdir -p $RP_WORKSPACE/apps
     fi
-    cd /workspace/apps
-    if [ ! -d "/workspace/apps/supersvg" ]; then
-        git clone https://github.com/am05mhz/SuperSVG.git supersvg
-    fi
-    cd supersvg
-    git submodule update --init --recursive
-    cp -r /app/supersvg /workspace/apps/
-    cd diffvg
-    python setup.py install
+    cp -r /app/supersvg $RP_WORKSPACE/apps/
 }
 
 setup_combined() {
@@ -77,10 +67,9 @@ setup_combined() {
     echo "========================================================"
     echo "installing combined api..."
     echo "========================================================"
-    source /app/venv/apps/bin/activate
-    cp /app/combined_api.py /workspace/apps/
-    cp /app/common_utils.py /workspace/apps/
-    cp -r /app/templates /workspace/apps/
+    cp /app/combined_api.py $RP_WORKSPACE/apps/
+    cp /app/common_utils.py $RP_WORKSPACE/apps/
+    cp -r /app/templates $RP_WORKSPACE/apps/
 }
 
 setup_layeredsvg() {
@@ -88,31 +77,10 @@ setup_layeredsvg() {
     echo "========================================================"
     echo "installing layeredsvg..."
     echo "========================================================"
-    source /app/venv/apps/bin/activate
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
+    if [ ! -d "$RP_WORKSPACE/apps" ]; then
+        mkdir -p $RP_WORKSPACE/apps
     fi
-    cd /workspace/apps
-    if [ ! -d "/workspace/apps/layeredsvg" ]; then
-        git clone https://github.com/SZUVIZ/layered_vectorization.git layeredsvg
-    fi
-    cd /workspace/apps/layeredsvg
-    if [ ! -d "SAMRefiner" ]; then
-        git clone https://github.com/linyq2117/SAMRefiner.git
-    fi
-    if [ ! -d "diffvg" ]; then
-        git clone https://github.com/am05mhz/diffvg.git
-    fi
-    cd diffvg
-    git submodule update --init --recursive
-    cp -r /app/layeredsvg /workspace/apps/
-    python setup.py install
-    cd /workspace/apps/layeredsvg
-    mkdir -p LayeredVectorization/checkpoints
-    cd LayeredVectorization/checkpoints
-    if [ ! -f "sam_vit_h_4b8939.pth" ]; then
-        wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
-    fi
+    cp -r /app/layeredsvg $RP_WORKSPACE/apps/
 }
 
 setup_longcat() {
@@ -121,11 +89,10 @@ setup_longcat() {
     echo "installing longcat..."
     echo "========================================================"
     source /app/venv/apps/bin/activate
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
+    if [ ! -d "$RP_WORKSPACE/apps" ]; then
+        mkdir -p $RP_WORKSPACE/apps
     fi
-    cp -r /app/longcat /workspace/apps/
-    cd /workspace/apps/longcat
+    cp -r /app/longcat $RP_WORKSPACE/apps/
 }
 
 setup_bezier() {
@@ -134,24 +101,10 @@ setup_bezier() {
     echo "installing bezier splatting..."
     echo "========================================================"
     source /app/venv/apps/bin/activate
-    if [ ! -d "/workspace/apps" ]; then
-        mkdir -p /workspace/apps
+    if [ ! -d "$RP_WORKSPACE/apps" ]; then
+        mkdir -p $RP_WORKSPACE/apps
     fi
-    cd /workspace/apps
-    if [ ! -d "/workspace/apps/bezier" ]; then
-        git clone https://github.com/xiliu8006/Bezier_splatting.git bezier
-    fi
-    cp -r /app/bezier /workspace/apps/
-    cd /workspace/apps/bezier
-    if [ ! -d "/workspace/apps/bezier/gsplat" ] || [ ! -f "/workspace/apps/bezier/gsplat/setup.py" ]; then
-        if [ -d "/workspace/apps/bezier/gsplat" ]; then
-            rm -rf /workspace/apps/besier/gsplat
-        fi
-        git clone https://github.com/XingtongGe/gsplat.git
-    fi
-    cd /workspace/apps/bezier/gsplat
-    ls -la
-    pip install --no-build-isolation .
+    cp -r /app/bezier $RP_WORKSPACE/apps/
 }
 
 start_sam3() {
@@ -160,7 +113,7 @@ start_sam3() {
     echo "starting sam3..."
     echo "========================================================"
     source /app/venv/apps/bin/activate
-    cd /workspace/apps/sam3
+    cd $RP_WORKSPACE/apps/sam3
     nohup python server.py --port=$SAM3_PORT > /proc/self/fd/1 2>&1 &
 }
 
@@ -171,7 +124,7 @@ start_supersvg() {
         echo "starting supersvg..."
         echo "========================================================"
         source /app/venv/apps/bin/activate
-        cd /workspace/apps/supersvg
+        cd $RP_WORKSPACE/apps/supersvg
         nohup python server.py --port=$SUPERSVG_PORT > /proc/self/fd/1 2>&1 &
     else
         echo "not starting supersvg"
@@ -185,7 +138,7 @@ start_combined() {
         echo "starting combined api..."
         echo "========================================================"
         source /app/venv/apps/bin/activate
-        cd /workspace/apps
+        cd $RP_WORKSPACE/apps
         nohup python combined_api.py --port=$COMBINED_PORT > /proc/self/fd/1 2>&1 &
     else
         echo "not starting combined api"
@@ -198,25 +151,25 @@ start_bezier() {
         echo "========================================================"
         echo "starting bezier splatting..."
         source /app/venv/apps/bin/activate
-        cd /workspace/apps/bezier
+        cd $RP_WORKSPACE/apps/bezier
         nohup python server.py --port=$BEZIER_PORT > /proc/self/fd/1 2>&1 &
     else
         echo "not starting bezier splat"
     fi
 }
 
-setup_vllm() {
-    echo ""
-    echo "========================================================"
-    echo "setup vllm..."
-    if [[ $USE_VLLM ]]; then
-        pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
-        echo "starting vllm..."
-        vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.55 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
-    else
-        echo "not setup vllm"
-    fi
-}
+# setup_vllm() {
+#     echo ""
+#     echo "========================================================"
+#     echo "setup vllm..."
+#     if [[ $USE_VLLM ]]; then
+#         pip install vllm --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu128
+#         echo "starting vllm..."
+#         vllm serve Qwen/Qwen3-VL-8B-Thinking --max-num-seqs 2 --tensor-parallel-size 1 --gpu-memory-utilization 0.55 --allowed-local-media-path / --enforce-eager --port $VLLM_PORT
+#     else
+#         echo "not setup vllm"
+#     fi
+# }
 
 # Generate SSH host keys
 generate_ssh_keys() {
@@ -245,12 +198,12 @@ call_python_handler() {
 echo "Pod Started"
 
 setup_ssh
-setup_sam3
-setup_supersvg
-setup_layeredsvg
-setup_bezier
-setup_longcat
-setup_combined
+# setup_sam3
+# setup_supersvg
+# setup_layeredsvg
+# setup_bezier
+# setup_longcat
+# setup_combined
 
 case $MODE_TO_RUN in
     serverless)
@@ -259,7 +212,7 @@ case $MODE_TO_RUN in
         ;;
     pod)
         echo "Running in pod mode"
-        start_sam3
+        # start_sam3
         # start_supersvg
         # start_bezier
         start_combined

@@ -49,7 +49,8 @@ ENV HF_TOKEN=$HF_TOKEN
 
 
 # Set the default workspace directory
-ENV RP_WORKSPACE=/workspace
+ARG RP_WORKSPACE=/workspace
+ENV RP_WORKSPACE=$RP_WORKSPACE
 
 # Override the default huggingface cache directory.
 ENV HF_HOME="${RP_WORKSPACE}/.cache/huggingface/"
@@ -62,6 +63,9 @@ ENV HF_XET_HIGH_PERFORMANCE=1
 ARG WORKSPACE_DIR=/app
 ENV WORKSPACE_DIR=${WORKSPACE_DIR}
 WORKDIR $WORKSPACE_DIR
+
+# install git and wget
+RUN apt-get update && apt-get install -y git wget
 
 # Create virtualenv
 ENV VIRTUAL_ENV=/app/venv/apps
@@ -83,11 +87,72 @@ COPY requirements--pre.txt .
 COPY requirements--no-isolate.txt .
 
 # Install normal requirements
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN set -e; pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir --pre -r requirements--pre.txt
 
 # Install no-isolation requirements
-RUN pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.txt
+RUN set -e; pip install --no-cache-dir --no-build-isolation -r requirements--no-isolate.txt
+
+# install supersvg
+RUN if [ ! -d "$WORKSPACE_DIR/supersvg" ]; then \
+        set -e; \
+        echo "================================"; \
+        echo "installing supersvg"; \
+        echo "================================"; \
+        git clone https://github.com/am05mhz/SuperSVG.git supersvg; \
+        cd "$WORKSPACE_DIR/supersvg"; \
+        git submodule update --init --recursive; \
+        cd diffvg; \
+        python setup.py install; \
+    else \
+        echo "supersvg already exists, skipping clone."; \
+    fi
+
+# install layeredsvg
+RUN if [ ! -d "$WORKSPACE_DIR/layeredsvg" ]; then \
+        set -e; \
+        echo "================================"; \
+        echo "installing layeredsvg"; \
+        echo "================================"; \
+        git clone https://github.com/SZUVIZ/layered_vectorization.git layeredsvg; \
+        cd "$WORKSPACE_DIR/layeredsvg"; \
+        git submodule update --init --recursive; \
+        cd diffvg; \
+        python setup.py install; \
+    else \
+        echo "layeredsvg already exists, skipping clone."; \
+    fi
+
+RUN if [ ! -d "$WORKSPACE_DIR/layeredsvg/SAMRefiner" ]; then \
+        set -e; \
+        echo "cloning SAMRefiner"; \
+        cd "$WORKSPACE_DIR/layeredsvg"; \
+        git clone https://github.com/linyq2117/SAMRefiner.git; \
+    fi
+
+RUN set -e; if [ ! -d "$WORKSPACE_DIR/layeredsvg/LayeredVectorization/checkpoints" ]; then \
+        echo "downloading checkpoints"; \
+        cd "$WORKSPACE_DIR/layeredsvg"; \
+        mkdir -p LayeredVectorization/checkpoints; \
+        wget --tries=3 -O LayeredVectorization/checkpoints/sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth; \
+    fi
+
+# install bezier splat
+RUN if [ ! -d "$WORKSPACE_DIR/bezier" ]; then \
+        set -e; \
+        echo "================================"; \
+        echo "installing bezier splat"; \
+        echo "================================"; \
+        git clone https://github.com/xiliu8006/Bezier_splatting.git bezier; \
+        cd "$WORKSPACE_DIR/bezier"; \
+        if [ ! -d "$WORKSPACE_DIR/bezier/gsplat" ]; then \
+            git clone https://github.com/XingtongGe/gsplat.git; \
+            cd "$WORKSPACE_DIR/bezier/gsplat"; \
+            pip install --no-build-isolation .; \
+        fi; \
+    else \
+        echo "bezier splat already exists, skipping clone."; \
+    fi
 
 # Copy all of our files into the container
 COPY handler_runpod.py $WORKSPACE_DIR/handler_runpod.py
