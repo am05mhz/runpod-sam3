@@ -151,7 +151,7 @@ setup_bezier() {
     fi
     cd /workspace/apps/bezier/gsplat
     ls -la
-    pip install --no-build-isolation -e .
+    pip install --no-build-isolation .
 }
 
 start_sam3() {
