@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
 # Web server
 fastapi>=0.110
 uvicorn[standard]>=0.29

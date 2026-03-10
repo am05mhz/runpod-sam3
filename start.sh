@@ -50,10 +50,6 @@ setup_sam3() {
         mkdir -p /workspace/apps
     fi
     cp -r /app/sam3 /workspace/apps/
-    cp /app/requirements*.txt /workspace/apps/sam3
-    cd /workspace/apps/sam3
-    pip install --upgrade --no-cache-dir -r requirements.txt
-    pip install --upgrade --pre --no-cache-dir -r requirements--pre.txt
 }
 
 setup_supersvg() {
@@ -73,8 +69,6 @@ setup_supersvg() {
     git submodule update --init --recursive
     cp -r /app/supersvg /workspace/apps/
     python setup.py install
-    cd ..
-    pip install --upgrade --no-cache-dir -r requirements.txt
 }
 
 setup_combined() {
@@ -111,9 +105,8 @@ setup_layeredsvg() {
     cd diffvg
     git submodule update --init --recursive
     cp -r /app/layeredsvg /workspace/apps/
-    python setup.py install
     cd /workspace/apps/layeredsvg
-    pip install --upgrade --no-cache-dir -r requirements.txt
+    python setup.py install
     mkdir -p LayeredVectorization/checkpoints
     cd LayeredVectorization/checkpoints
     if [ ! -f "sam_vit_h_4b8939.pth" ]; then
@@ -149,7 +142,6 @@ setup_bezier() {
     fi
     cp -r /app/bezier /workspace/apps/
     cd /workspace/apps/bezier
-    pip install --upgrade --no-cache-dir -r requirements.txt
     if [ ! -d "/workspace/apps/bezier/gsplat" ] || [ ! -f "/workspace/apps/bezier/gsplat/setup.py" ]; then
         if [ -d "/workspace/apps/bezier/gsplat" ]; then
             rm -rf /workspace/apps/besier/gsplat
