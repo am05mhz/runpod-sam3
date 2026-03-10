@@ -68,6 +68,7 @@ setup_supersvg() {
     cd supersvg
     git submodule update --init --recursive
     cp -r /app/supersvg /workspace/apps/
+    cd diffvg
     python setup.py install
 }
 
