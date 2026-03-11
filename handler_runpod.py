@@ -86,11 +86,8 @@ async def load_image_from_input(job_input: Dict[str, Any]):
     if "image_url" in job_input:
         image_url = job_input["image_url"]
         try:
-            # Use the load_image_from_url utility if available
-            if asyncio.iscoroutinefunction(load_image_from_url):
-                return await load_image_from_url(image_url)
-            else:
-                return load_image_from_url(image_url)
+            # load_image_from_url is async
+            return await load_image_from_url(image_url)
         except Exception as e:
             raise ValueError(f"Failed to load image from URL: {e}")
     
@@ -107,15 +104,12 @@ async def load_image_from_input(job_input: Dict[str, Any]):
 
 async def call_module_function(module, fn, module_args, module_kwargs):
     """
-    Call a module function with intelligent argument handling.
+    Call an async module function with intelligent argument handling.
     Falls back to different argument combinations if initial call fails.
-    Handles both sync and async functions.
+    Module functions are expected to be async.
     """
     try:
-        if asyncio.iscoroutinefunction(fn):
-            result = await fn(*module_args, **module_kwargs)
-        else:
-            result = fn(*module_args, **module_kwargs)
+        result = await fn(*module_args, **module_kwargs)
         return result
     except TypeError as te:
         msg = str(te).lower()
@@ -126,10 +120,7 @@ async def call_module_function(module, fn, module_args, module_kwargs):
 
             if accepts_var_kw:
                 try:
-                    if asyncio.iscoroutinefunction(fn):
-                        result = await fn(*module_args, **module_kwargs)
-                    else:
-                        result = fn(*module_args, **module_kwargs)
+                    result = await fn(*module_args, **module_kwargs)
                     return result
                 except TypeError:
                     pass
@@ -137,38 +128,23 @@ async def call_module_function(module, fn, module_args, module_kwargs):
             if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
                 allowed = {k: v for k, v in module_kwargs.items() if k in params}
                 if allowed:
-                    if asyncio.iscoroutinefunction(fn):
-                        result = await fn(*module_args, **allowed)
-                    else:
-                        result = fn(*module_args, **allowed)
+                    result = await fn(*module_args, **allowed)
                     return result
                 else:
-                    if asyncio.iscoroutinefunction(fn):
-                        result = await fn(*module_args)
-                    else:
-                        result = fn(*module_args)
+                    result = await fn(*module_args)
                     return result
 
-            if asyncio.iscoroutinefunction(fn):
-                result = await fn(*module_args)
-            else:
-                result = fn(*module_args)
+            result = await fn(*module_args)
             return result
         except Exception as sig_error:
             print(f"Warning: inspect.signature failed: {sig_error}")
             print(f"Original TypeError: {te}")
             try:
-                if asyncio.iscoroutinefunction(fn):
-                    result = await fn(*module_args, **module_kwargs)
-                else:
-                    result = fn(*module_args, **module_kwargs)
+                result = await fn(*module_args, **module_kwargs)
                 return result
             except TypeError:
                 print("Fallback: calling without kwargs")
-                if asyncio.iscoroutinefunction(fn):
-                    result = await fn(*module_args)
-                else:
-                    result = fn(*module_args)
+                result = await fn(*module_args)
                 return result
 
 
@@ -249,7 +225,24 @@ async def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Process sam3 module request."""
+    """
+    Process sam3 module request.
+    
+    Supports two modes:
+    - mode "text": semantic segmentation with text queries (uses segment_text endpoint)
+    - mode "multi": general segmentation (uses segment endpoint, default)
+    
+    Example input:
+    {
+        "image_url": "...",
+        "params": {
+            "mode": "text",
+            "query": "cat",
+            "queries": "dog,cat",
+            "conf_thresh": 0.8
+        }
+    }
+    """
     module_path = COMPONENT_PATHS.get("sam3")
     if not module_path or not os.path.exists(module_path):
         raise RuntimeError("SAM3 module path not found")
@@ -262,23 +255,122 @@ async def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
     
     # Get parameters
     params = job_input.get("params", {})
-    prompt = params.get("prompt", None)
-    min_area = params.get("min_area", 0)
+    mode = params.get("mode", "multi")
     
-    # Call SAM inference
-    if hasattr(module, "run_sam_inference"):
-        segments = await call_module_function(
-            module, module.run_sam_inference,
-            [img_np, prompt, None, None, None, 0, 0.8, True],
-            {}
-        )
+    # ========== TEXT MODE: Semantic Segmentation ==========
+    if mode == "text":
+        query = params.get("query", None)
+        queries = params.get("queries", None)
+        conf_thresh = params.get("conf_thresh", 0.8)
+        
+        if not query and not queries:
+            raise ValueError("Either 'query' or 'queries' required for text mode")
+        
+        if not hasattr(module, "run_sam_inference"):
+            raise RuntimeError("run_sam_inference function not found in sam3 module")
+        
+        # Build object list
+        objs = queries.split(',') if queries else []
+        if query:
+            objs.append(query)
+        objs = [obj.strip() for obj in objs if obj.strip()]
+        
+        if not objs:
+            objs = ["objects"]
+        
+        all_masks = []
+        all_scores = []
+        all_labels = []
+        
+        # Run inference for each object
+        for obj_name in objs:
+            outs = await call_module_function(
+                module, module.run_sam_inference,
+                [img_np, obj_name, None, None, None, 0, conf_thresh, True],
+                {}
+            )
+            
+            if isinstance(outs, dict) and "raw_masks" in outs:
+                raw_masks = outs["raw_masks"]
+                raw_scores = outs["raw_scores"]
+                
+                for idx, mask in enumerate(raw_masks):
+                    score = float(raw_scores[idx])
+                    if score >= conf_thresh:
+                        all_masks.append(mask.astype(np.uint8))
+                        all_scores.append(score)
+                        all_labels.append(obj_name)
+        
+        # Prepare masks in base64 format using numpy compressed format
+        if len(all_masks) > 0:
+            masks_array = np.stack(all_masks, axis=0)
+            # Use numpy savez_compressed for masks
+            buffer = io.BytesIO()
+            np.savez_compressed(buffer, masks=masks_array)
+            buffer.seek(0)
+            masks_b64 = base64.b64encode(buffer.read()).decode('utf-8')
+        else:
+            masks_b64 = None
+        
         return {
             "status": "success",
             "module": "sam3",
-            "segments": segments,
+            "mode": "text",
+            "masks": masks_b64,
+            "num_masks": len(all_masks),
+            "scores": all_scores,
+            "labels": all_labels,
+            "detected_objects": objs,
         }
-    else:
-        raise RuntimeError("run_sam_inference function not found in sam3 module")
+    
+    # ========== MULTI MODE: General Segmentation ==========
+    else:  # mode == "multi"
+        prompt = params.get("prompt", None)
+        points = params.get("points", None)
+        point_labels = params.get("point_labels", None)
+        box = params.get("box", None)
+        min_area = params.get("min_area", 0)
+        
+        # Validate that at least one prompt type is provided
+        if not prompt and not points and not box:
+            raise ValueError("At least one prompt type required for multi mode: 'prompt', 'points', or 'box'")
+        
+        if not hasattr(module, "run_sam_inference"):
+            raise RuntimeError("run_sam_inference function not found in sam3 module")
+        
+        # Call SAM inference with appropriate parameters
+        segments = await call_module_function(
+            module, module.run_sam_inference,
+            [img_np, prompt, points, point_labels, box, min_area, 0.8, False],
+            {}
+        )
+        
+        # Convert result to segments format
+        segments_out = []
+        if isinstance(segments, list):
+            for idx, seg in enumerate(segments):
+                if isinstance(seg, dict) and "mask" in seg:
+                    mask = seg["mask"]
+                    segments_out.append({
+                        "id": idx,
+                        "mask_base64": module.mask_to_base64_png(mask) if hasattr(module, "mask_to_base64_png") else base64.b64encode(mask.tobytes()).decode('utf-8'),
+                        "area": int(mask.sum()),
+                    })
+                else:
+                    # Fallback if result is just masks
+                    segments_out.append({
+                        "id": idx,
+                        "mask_base64": module.mask_to_base64_png(seg) if hasattr(module, "mask_to_base64_png") else base64.b64encode(seg.tobytes()).decode('utf-8'),
+                        "area": int(seg.sum()),
+                    })
+        
+        return {
+            "status": "success",
+            "module": "sam3",
+            "mode": "multi",
+            "segments": segments_out,
+            "num_segments": len(segments_out),
+        }
 
 
 async def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -439,9 +531,9 @@ async def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"Unknown action for layeredsvg: {action}")
 
 
-async def handler(job):
+async def _handler_async(job):
     """
-    Main RunPod handler function.
+    Internal async handler function containing all async logic.
     
     Expected input format:
     {
@@ -504,6 +596,19 @@ async def handler(job):
             "error": error_msg,
             "traceback": traceback.format_exc()
         }
+
+
+def handler(job):
+    """
+    Main RunPod handler function (synchronous).
+    
+    RunPod's serverless SDK expects a synchronous handler that processes
+    jobs from the queue. This wrapper executes the async logic using asyncio.run().
+    
+    Note: asyncio.run() creates a fresh event loop, runs the async function,
+    and closes the loop. This is the correct pattern for RunPod handlers.
+    """
+    return asyncio.run(_handler_async(job))
 
 
 # Start the RunPod serverless worker
