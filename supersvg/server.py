@@ -903,7 +903,7 @@ def process_segments_batched(model, image_np, segments, pass_name="Pass"):
     print(f"{pass_name} complete: {shape_id} shapes generated")
     return shapes, groups
 
-def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
+async def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
     """
     Process an image using SAM3 segmentation + SuperSVG vectorization.
     Args:
@@ -935,7 +935,7 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     # Step 1: Generate SAM3 masks via service
     print("\n--- Step 1: SAM3 Segmentation (via service) ---")
     print(f"Using Labels: {use_labels if use_labels else 'Generic objects'}")
-    masks, labels = generate_sam3_masks(
+    masks, labels = await generate_sam3_masks(
         image_pil,
         use_labels=use_labels,
         conf_thresh=conf_thresh,
