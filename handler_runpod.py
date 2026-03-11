@@ -29,6 +29,7 @@ import inspect
 import tempfile
 import base64
 import io
+import asyncio
 from pathlib import Path
 from typing import Dict, Any
 
@@ -58,7 +59,7 @@ COMPONENT_PATHS = {
 }
 
 
-def load_image_from_input(job_input: Dict[str, Any]):
+async def load_image_from_input(job_input: Dict[str, Any]):
     """
     Load image from either URL or base64 encoded data.
     Returns PIL Image object.
@@ -69,7 +70,10 @@ def load_image_from_input(job_input: Dict[str, Any]):
         image_url = job_input["image_url"]
         try:
             # Use the load_image_from_url utility if available
-            return load_image_from_url(image_url)
+            if asyncio.iscoroutinefunction(load_image_from_url):
+                return await load_image_from_url(image_url)
+            else:
+                return load_image_from_url(image_url)
         except Exception as e:
             raise ValueError(f"Failed to load image from URL: {e}")
     
@@ -84,13 +88,18 @@ def load_image_from_input(job_input: Dict[str, Any]):
         raise ValueError("Provide either 'image_url' or 'image_base64' in input")
 
 
-def call_module_function(module, fn, module_args, module_kwargs):
+async def call_module_function(module, fn, module_args, module_kwargs):
     """
     Call a module function with intelligent argument handling.
     Falls back to different argument combinations if initial call fails.
+    Handles both sync and async functions.
     """
     try:
-        return fn(*module_args, **module_kwargs)
+        if asyncio.iscoroutinefunction(fn):
+            result = await fn(*module_args, **module_kwargs)
+        else:
+            result = fn(*module_args, **module_kwargs)
+        return result
     except TypeError as te:
         msg = str(te).lower()
         try:
@@ -100,29 +109,53 @@ def call_module_function(module, fn, module_args, module_kwargs):
 
             if accepts_var_kw:
                 try:
-                    return fn(*module_args, **module_kwargs)
+                    if asyncio.iscoroutinefunction(fn):
+                        result = await fn(*module_args, **module_kwargs)
+                    else:
+                        result = fn(*module_args, **module_kwargs)
+                    return result
                 except TypeError:
                     pass
 
             if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
                 allowed = {k: v for k, v in module_kwargs.items() if k in params}
                 if allowed:
-                    return fn(*module_args, **allowed)
+                    if asyncio.iscoroutinefunction(fn):
+                        result = await fn(*module_args, **allowed)
+                    else:
+                        result = fn(*module_args, **allowed)
+                    return result
                 else:
-                    return fn(*module_args)
+                    if asyncio.iscoroutinefunction(fn):
+                        result = await fn(*module_args)
+                    else:
+                        result = fn(*module_args)
+                    return result
 
-            return fn(*module_args)
+            if asyncio.iscoroutinefunction(fn):
+                result = await fn(*module_args)
+            else:
+                result = fn(*module_args)
+            return result
         except Exception as sig_error:
             print(f"Warning: inspect.signature failed: {sig_error}")
             print(f"Original TypeError: {te}")
             try:
-                return fn(*module_args, **module_kwargs)
+                if asyncio.iscoroutinefunction(fn):
+                    result = await fn(*module_args, **module_kwargs)
+                else:
+                    result = fn(*module_args, **module_kwargs)
+                return result
             except TypeError:
                 print("Fallback: calling without kwargs")
-                return fn(*module_args)
+                if asyncio.iscoroutinefunction(fn):
+                    result = await fn(*module_args)
+                else:
+                    result = fn(*module_args)
+                return result
 
 
-def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
+async def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process supersvg module request."""
     module_path = COMPONENT_PATHS.get("supersvg")
     if not module_path or not os.path.exists(module_path):
@@ -131,7 +164,7 @@ def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
     module = import_module_from_path("supersvg_mod", module_path)
     
     # Load image
-    image = load_image_from_input(job_input)
+    image = await load_image_from_input(job_input)
     
     # Get parameters
     params = job_input.get("params", {})
@@ -171,7 +204,7 @@ def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
             raise RuntimeError(f"Function {callable_name} not found in supersvg module")
         
         # Call the module function
-        result = call_module_function(
+        result = await call_module_function(
             module, fn,
             [input_path, output_svg, output_png],
             module_kwargs
@@ -198,7 +231,7 @@ def process_supersvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
+async def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process sam3 module request."""
     module_path = COMPONENT_PATHS.get("sam3")
     if not module_path or not os.path.exists(module_path):
@@ -207,7 +240,7 @@ def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
     module = import_module_from_path("sam3_mod", module_path)
     
     # Load image
-    image = load_image_from_input(job_input)
+    image = await load_image_from_input(job_input)
     img_np = module.np.array(image)
     
     # Get parameters
@@ -217,7 +250,11 @@ def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
     
     # Call SAM inference
     if hasattr(module, "run_sam_inference"):
-        segments = module.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+        segments = await call_module_function(
+            module, module.run_sam_inference,
+            [img_np, prompt, None, None, None, 0, 0.8, True],
+            {}
+        )
         return {
             "status": "success",
             "module": "sam3",
@@ -227,7 +264,7 @@ def process_sam3(job_input: Dict[str, Any]) -> Dict[str, Any]:
         raise RuntimeError("run_sam_inference function not found in sam3 module")
 
 
-def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
+async def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process bezier module request."""
     module_path = COMPONENT_PATHS.get("bezier")
     if not module_path or not os.path.exists(module_path):
@@ -236,7 +273,7 @@ def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
     module = import_module_from_path("bezier_mod", module_path)
     
     # Load image
-    image = load_image_from_input(job_input)
+    image = await load_image_from_input(job_input)
     
     # Get parameters
     params = job_input.get("params", {})
@@ -259,7 +296,7 @@ def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
             raise RuntimeError("run_bezier_splatting function not found in bezier module")
         
         # Call the module function
-        result = call_module_function(
+        result = await call_module_function(
             module, fn,
             [job_id, input_path, {"num_curves": num_curves, "iterations": iterations, "mode": mode}],
             {}
@@ -286,7 +323,7 @@ def process_bezier(job_input: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
+async def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
     """Process layeredsvg module request."""
     module_path = COMPONENT_PATHS.get("layeredsvg")
     if not module_path or not os.path.exists(module_path):
@@ -299,7 +336,7 @@ def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
     
     if action == "segment":
         # Load image
-        image = load_image_from_input(job_input)
+        image = await load_image_from_input(job_input)
         
         # Get parameters
         params = job_input.get("params", {})
@@ -315,7 +352,7 @@ def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
             if fn is None:
                 raise RuntimeError("run_segmentation function not found in layeredsvg module")
             
-            result = call_module_function(
+            result = await call_module_function(
                 module, fn,
                 [job_id],
                 {"keywords_with_conf": keywords}
@@ -347,7 +384,7 @@ def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
         if fn is None:
             raise RuntimeError("run_vectorization function not found in layeredsvg module")
         
-        result = call_module_function(
+        result = await call_module_function(
             module, fn,
             [job_id],
             {"selected_layers": selected_layers, "quality": quality}
@@ -385,7 +422,7 @@ def process_layeredsvg(job_input: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"Unknown action for layeredsvg: {action}")
 
 
-def handler(job):
+async def handler(job):
     """
     Main RunPod handler function.
     
@@ -419,13 +456,13 @@ def handler(job):
         
         # Route to appropriate processor
         if module == "supersvg":
-            result = process_supersvg(job_input)
+            result = await process_supersvg(job_input)
         elif module == "sam3":
-            result = process_sam3(job_input)
+            result = await process_sam3(job_input)
         elif module == "bezier":
-            result = process_bezier(job_input)
+            result = await process_bezier(job_input)
         elif module == "layeredsvg":
-            result = process_layeredsvg(job_input)
+            result = await process_layeredsvg(job_input)
         else:
             return {
                 "status": "error",
@@ -470,5 +507,5 @@ if __name__ == "__main__":
         }
         print("Test job:", test_job)
         # Uncomment to test:
-        # result = handler(test_job)
+        # result = asyncio.run(handler(test_job))
         # print("Result:", result)

@@ -36,7 +36,7 @@ from scipy.special import comb
 from scipy.stats import norm
 
 from gaussianimage_cholesky_svg import GaussianImage_Cholesky
-from utils import sparse_coord_init
+from .utils import sparse_coord_init
 
 # -------------------------
 # App setup
