@@ -623,6 +623,7 @@ async def vectorize_confirmed(job_id: str, data: Dict[Any, Any]):
     # reset status so that when loaded, it does not get the old status
     job_data['status'] = "queued"
     job_data["quality"] = quality
+    job_data["selected_layers"] = selected_layers
     saveToFile(metapath, job_data)
 
     inp = job_data['filepath']
@@ -659,7 +660,7 @@ async def job_status(job_id: str):
         metapath = os.path.join(run_folder, "job.json")
         job_data = loadFromFile(metapath)
 
-        inp = job_data['filepath']
+        inp = job_data.get('filepath')
         job = {
             "module": "layeredsvg",
             "status": job_data.get('status', 'error'),
@@ -669,6 +670,23 @@ async def job_status(job_id: str):
             "error": None,
         }
         
+        # re-queue it
+        JOBS[job_id] = {
+            "module": "layeredsvg",
+            "callable": "run_vectorization",
+            "args": [job_id],
+            "kwargs": {
+                "selected_layers": job_data.get("selected_layers"),
+                "quality": job_data.get("quality"),
+            },
+            "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+            "svg_out": svg_out,
+            "png_out": png_out,
+            "status": "queued",
+            "created_at": time.time(),
+        }
+        JOB_QUEUE.put(job_id)
+
     return {
         "job_id": job_id,
         "module": job.get("module"),
