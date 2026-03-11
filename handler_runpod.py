@@ -33,6 +33,23 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Any
 
+# utility serialization helper
+import numpy as np
+
+def sanitize_for_json(obj):
+    """Recursively convert numpy arrays (and other non-serializable types) to JSON-friendly forms."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return [sanitize_for_json(v) for v in obj]
+    # add more conversions if needed
+    else:
+        return obj
+
 # Import runpod SDK
 try:
     import runpod
@@ -473,6 +490,8 @@ async def handler(job):
         if runpod:
             runpod.serverless.progress_update(job, "Completed")
         
+        # sanitize result to make JSON serializable
+        result = sanitize_for_json(result)
         return result
     
     except Exception as e:
