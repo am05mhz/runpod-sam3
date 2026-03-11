@@ -50,7 +50,7 @@ OUTPUT_FOLDER = os.path.join(BASE_DIR, "output")
 CHECKPOINT_PATH = os.path.join(BASE_DIR, "ckpts", "coarse-model.pt")
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp"}
-SAM3_SERVICE_URL = "http://127.0.0.1:8000"
+# SAM3_SERVICE_URL = "http://127.0.0.1:8000"  # Removed - using direct calls
 
 WIDTH = 224
 N_SEGMENTS = 1500  # Default segment count
@@ -111,26 +111,18 @@ def unload_supersvg_model():
 
 
 def check_sam3_service():
-    try:
-        r = requests.get(f"{SAM3_SERVICE_URL}/health", timeout=5)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
+    """Removed - no longer using HTTP service"""
     return None
 
 
 def load_sam3_via_service():
-    r = requests.post(f"{SAM3_SERVICE_URL}/load", timeout=300)
-    return r.status_code == 200
+    """Removed - no longer using HTTP service"""
+    return False
 
 
 def unload_sam3_via_service():
-    try:
-        requests.post(f"{SAM3_SERVICE_URL}/unload", timeout=30)
-        return True
-    except Exception:
-        return False
+    """Removed - no longer using HTTP service"""
+    return False
 
 
 def image_to_base64(image: Image.Image) -> str:
@@ -204,7 +196,7 @@ def optimize_svg_precision(svg_path, decimals=2):
 # from your original file.
 #
 # That includes:
-# - generate_sam3_masks_via_service
+# - generate_sam3_masks
 # - group_masks_by_label
 # - process_slic_segments_batched
 # - process_single_object_mask
@@ -217,111 +209,91 @@ def optimize_svg_precision(svg_path, decimals=2):
 #
 # 👉 Paste them EXACTLY as-is from your original file.
 # ------------------------------------------------------------------------------
-def generate_sam3_masks_via_service(image_pil, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1):
+def generate_sam3_masks(image_pil, use_labels=str|None, conf_thresh=0.3, num_rounds=1):
     """
-    Generate automatic segmentation masks using SAM3 service.
-    Calls the SAM3 service running in a separate environment.
-
-    VRAM Management:
-    - When use_ollama=True: SAM3 service handles loading/unloading internally
-      (unloads SAM3 -> runs Ollama -> unloads Ollama -> loads SAM3)
-    - When use_ollama=False: Load SAM3 on-demand here
+    Generate automatic segmentation masks using SAM3 directly (no HTTP service).
+    Calls SAM3 functions directly in the same process.
 
     Args:
         image_pil: PIL Image
-        use_ollama: If True, use Ollama for object detection + SAM3 segmentation
+        use_labels: List of specific labels to segment
         conf_thresh: Confidence threshold for segmentation
         num_rounds: Number of Ollama detection rounds
 
     Returns:
         Tuple of (masks list, labels list)
     """
-    # Check service health
-    health = check_sam3_service()
-    if health is None:
-        raise RuntimeError("SAM3 service not available. Make sure it's running on port 8000.")
-
-    # Only pre-load SAM3 if NOT using Ollama
-    # When using Ollama, the /auto_segment endpoint manages model loading internally
-    if not use_ollama and not health.get('model_loaded', False):
-        print("Loading SAM3 model via service...")
-        if not load_sam3_via_service():
-            raise RuntimeError("Failed to load SAM3 model")
-
-    # Convert image to base64
-    image_b64 = image_to_base64(image_pil)
-
+    # Import sam3 module directly
+    from common_utils import import_module_from_path
+    import os
+    
+    # Get sam3 module path (assuming it's in parent directory)
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    sam3_path = os.path.join(base_dir, "sam3", "server.py")
+    
+    if not os.path.exists(sam3_path):
+        raise RuntimeError(f"SAM3 module not found at {sam3_path}")
+    
+    sam3_mod = import_module_from_path("sam3_mod", sam3_path)
+    
+    # Convert PIL image to numpy array
+    img_np = sam3_mod.np.array(image_pil)
+    
     try:
         if use_labels:
-            # Use predefined labels
-            print("Calling SAM3 service with text query...")
-            response = requests.post(
-                f"{SAM3_SERVICE_URL}/segment_text",
-                json={
-                    'image': image_b64,
-                    'queries': use_labels,
-                    'conf_thresh': conf_thresh
-                },
-                timeout=300
-            )
+            # Use predefined labels - split string by comma and run each separately
+            print("Calling SAM3 directly with text queries...")
+            masks = []
+            labels = []
 
-        elif use_ollama:
-            # Use Ollama + SAM3 auto-segmentation
-            print(f"Calling SAM3 service with Ollama auto-detection (rounds={num_rounds})...")
-            response = requests.post(
-                f"{SAM3_SERVICE_URL}/auto_segment",
-                json={
-                    'image': image_b64,
-                    'conf_thresh': conf_thresh,
-                    'num_rounds': num_rounds
-                },
-                timeout=600  # 10 minute timeout for Ollama + SAM3
-            )
+            # ensure list of strings
+            if isinstance(use_labels, str):
+                label_list = [l.strip() for l in use_labels.split(",") if l.strip()]
+            elif isinstance(use_labels, (list, tuple)):
+                label_list = []
+                for item in use_labels:
+                    if isinstance(item, str):
+                        label_list.extend([l.strip() for l in item.split(",") if l.strip()])
+            else:
+                label_list = [str(use_labels)]
+
+            for prompt in label_list:
+                # call inference for each label
+                segments = sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+
+                # convert to list of masks
+                if isinstance(segments, dict) and 'segments' in segments:
+                    seg_masks = segments['segments']
+                else:
+                    seg_masks = segments if isinstance(segments, list) else [segments]
+
+                for m in seg_masks:
+                    masks.append(m)
+                    labels.append(prompt)
+
         else:
             # Use text-based segmentation for generic objects
-            print("Calling SAM3 service with text query...")
-            response = requests.post(
-                f"{SAM3_SERVICE_URL}/segment_text",
-                json={
-                    'image': image_b64,
-                    'query': 'objects',
-                    'conf_thresh': conf_thresh
-                },
-                timeout=300
-            )
+            print("Calling SAM3 directly with text query...")
+            prompt = "objects"
+            segments = sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+            
+            if isinstance(segments, dict) and 'segments' in segments:
+                masks = segments['segments']
+                labels = ["object"] * len(masks) if isinstance(masks, list) else ["object"]
+            else:
+                masks = segments if isinstance(segments, list) else [segments]
+                labels = ["object"] * len(masks)
 
-        if response.status_code != 200:
-            error = response.json().get('error', 'Unknown error')
-            raise RuntimeError(f"SAM3 service error: {error}")
-
-        data = response.json()
-        num_masks = data.get('num_masks', 0)
-        labels = data.get('labels', [])
-        print(f"SAM3 service returned {num_masks} masks")
-        if labels:
+        num_masks = len(masks) if isinstance(masks, list) else 1
+        print(f"SAM3 direct call returned {num_masks} masks")
+        if labels and len(set(labels)) > 1:
             unique_labels = list(set(labels))
             print(f"  Labels: {', '.join(unique_labels)}")
 
-        if num_masks == 0:
-            return [], []
-
-        # Decode masks
-        masks_array = masks_from_base64(data['masks'])
-
-        # Convert to list of 2D masks
-        if masks_array.ndim == 3:
-            masks = [masks_array[i] for i in range(masks_array.shape[0])]
-        else:
-            masks = []
-
         return masks, labels
 
-    except requests.exceptions.Timeout:
-        raise RuntimeError("SAM3 service timeout - image may be too large")
-    except requests.exceptions.ConnectionError:
-        raise RuntimeError("Cannot connect to SAM3 service")
     except Exception as e:
-        raise RuntimeError(f"SAM3 service error: {str(e)}")
+        raise RuntimeError(f"SAM3 direct call error: {str(e)}")
 
 
 def group_masks_by_label(masks, labels):
@@ -934,19 +906,6 @@ def process_segments_batched(model, image_np, segments, pass_name="Pass"):
 def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=4096, use_ollama=False, use_labels=None, conf_thresh=0.3, num_rounds=1, quality='default'):
     """
     Process an image using SAM3 segmentation + SuperSVG vectorization.
-
-    VRAM Management Pipeline:
-    1. Load and resize image
-    2. SAM3 service: Ollama detects objects -> unload Ollama -> SAM3 segments -> return masks
-    3. Unload SAM3, load SuperSVG
-    4. Group masks by object label, combine same-object masks
-    5. Process each object as a separate SVG layer with 3-pass SLIC
-    6. Save SVG with named layer groups
-
-    This ensures only one large model is in VRAM at a time.
-    Each detected object becomes its own layer in the SVG.
-    Each layer uses 3-pass SLIC like app.py for quality.
-
     Args:
         quality: 'low' (500), 'default' (1500), 'high' (5000), 'best' (10000) segments per layer
     """
@@ -976,9 +935,8 @@ def process_image_sam3(image_path, output_svg_path, output_png_path, max_dim=409
     # Step 1: Generate SAM3 masks via service
     print("\n--- Step 1: SAM3 Segmentation (via service) ---")
     print(f"Using Labels: {use_labels if use_labels else 'Generic objects'}")
-    masks, labels = generate_sam3_masks_via_service(
+    masks, labels = generate_sam3_masks(
         image_pil,
-        use_ollama=use_ollama,
         use_labels=use_labels,
         conf_thresh=conf_thresh,
         num_rounds=num_rounds
@@ -1215,7 +1173,7 @@ async def index(request: Request):
 async def status():
     return {
         "supersvg_loaded": supersvg_model is not None,
-        "sam3_service": check_sam3_service(),
+        "sam3_direct": True,  # Now using direct calls instead of service
         "device": device,
     }
 
