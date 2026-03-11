@@ -146,6 +146,7 @@ RUN if [ ! -d "$WORKSPACE_DIR/bezier" ]; then \
         echo "================================"; \
         git clone https://github.com/xiliu8006/Bezier_splatting.git bezier; \
         cd "$WORKSPACE_DIR/bezier"; \
+        mv utils.py bezutils.py; \
         if [ ! -d "$WORKSPACE_DIR/bezier/gsplat" ]; then \
             git clone https://github.com/XingtongGe/gsplat.git; \
             cd "$WORKSPACE_DIR/bezier/gsplat"; \

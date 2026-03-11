@@ -2,7 +2,7 @@ from gsplat.project_gaussians_2d_scale_rot import project_gaussians_2d_scale_rot
 from torch.optim.lr_scheduler import LambdaLR
 from gsplat.rasterize_sum import rasterize_gaussians_sum
 from gsplat.rasterize import  rasterize_gaussians
-from utils import *
+from bezutils import *
 import torch
 import torch.nn as nn
 import numpy as np
