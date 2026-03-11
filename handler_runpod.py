@@ -598,17 +598,14 @@ async def _handler_async(job):
         }
 
 
-def handler(job):
+async def handler(job):
     """
-    Main RunPod handler function (synchronous).
+    Main RunPod handler function (asynchronous).
     
-    RunPod's serverless SDK expects a synchronous handler that processes
-    jobs from the queue. This wrapper executes the async logic using asyncio.run().
-    
-    Note: asyncio.run() creates a fresh event loop, runs the async function,
-    and closes the loop. This is the correct pattern for RunPod handlers.
+    RunPod's serverless SDK supports async handlers. This directly awaits
+    the async logic without creating a new event loop.
     """
-    return asyncio.run(_handler_async(job))
+    return await _handler_async(job)
 
 
 # Start the RunPod serverless worker

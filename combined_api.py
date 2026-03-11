@@ -137,9 +137,12 @@ async def worker_loop(worker_idx: int = 0):
                 module_args = job.get("args", [])
                 module_kwargs = job.get("kwargs", {})
 
-                def _call_target():
+                async def _call_target():
                     try:
-                        return fn(*module_args, **module_kwargs)
+                        if inspect.iscoroutinefunction(fn):
+                            return await fn(*module_args, **module_kwargs)
+                        else:
+                            return fn(*module_args, **module_kwargs)
                     except TypeError as te:
                         msg = str(te).lower()
                         try:
@@ -149,28 +152,46 @@ async def worker_loop(worker_idx: int = 0):
 
                             if accepts_var_kw:
                                 try:
-                                    return fn(*module_args, **module_kwargs)
+                                    if inspect.iscoroutinefunction(fn):
+                                        return await fn(*module_args, **module_kwargs)
+                                    else:
+                                        return fn(*module_args, **module_kwargs)
                                 except TypeError:
                                     pass
 
                             if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
                                 allowed = {k: v for k, v in module_kwargs.items() if k in params}
                                 if allowed:
-                                    return fn(*module_args, **allowed)
+                                    if inspect.iscoroutinefunction(fn):
+                                        return await fn(*module_args, **allowed)
+                                    else:
+                                        return fn(*module_args, **allowed)
                                 else:
-                                    return fn(*module_args)
+                                    if inspect.iscoroutinefunction(fn):
+                                        return await fn(*module_args)
+                                    else:
+                                        return fn(*module_args)
 
-                            return fn(*module_args)
+                            if inspect.iscoroutinefunction(fn):
+                                return await fn(*module_args)
+                            else:
+                                return fn(*module_args)
                         except Exception as sig_error:
                             print(f"Warning: inspect.signature failed: {sig_error}")
                             print(f"Original TypeError: {te}")
                             try:
-                                return fn(*module_args, **module_kwargs)
+                                if inspect.iscoroutinefunction(fn):
+                                    return await fn(*module_args, **module_kwargs)
+                                else:
+                                    return fn(*module_args, **module_kwargs)
                             except TypeError:
                                 print("Fallback: calling without kwargs")
-                                return fn(*module_args)
+                                if inspect.iscoroutinefunction(fn):
+                                    return await fn(*module_args)
+                                else:
+                                    return fn(*module_args)
 
-                result = await asyncio.to_thread(_call_target)
+                result = await _call_target()
                 job["result"] = result
 
                 if module_key == "longcat":
