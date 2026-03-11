@@ -209,7 +209,7 @@ def optimize_svg_precision(svg_path, decimals=2):
 #
 # 👉 Paste them EXACTLY as-is from your original file.
 # ------------------------------------------------------------------------------
-def generate_sam3_masks(image_pil, use_labels=str|None, conf_thresh=0.3, num_rounds=1):
+async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_rounds=1):
     """
     Generate automatic segmentation masks using SAM3 directly (no HTTP service).
     Calls SAM3 functions directly in the same process.
