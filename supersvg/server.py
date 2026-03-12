@@ -261,16 +261,30 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
                 # call inference for each label
                 segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
 
-                # segments is expected to be a list of dicts like {'mask': np.ndarray, ...}
-                if isinstance(segments, dict) and 'segments' in segments:
-                    seg_masks = segments['segments']
+                # Handle service-style return structures
+                if isinstance(segments, dict):
+                    if 'segments' in segments:
+                        seg_masks = segments['segments']
+                    elif 'raw_masks' in segments:
+                        # for_svg mode returns raw_masks array
+                        seg_masks = list(segments['raw_masks'])
+                    else:
+                        # unknown dict, treat as single item
+                        seg_masks = [segments]
                 else:
                     seg_masks = segments if isinstance(segments, list) else [segments]
 
                 # unwrap masks from any dict wrappers
                 for item in seg_masks:
-                    if isinstance(item, dict) and 'mask' in item:
-                        m = item['mask']
+                    if isinstance(item, dict):
+                        if 'mask' in item:
+                            m = item['mask']
+                        elif 'raw_masks' in item:
+                            # should not happen here but guard
+                            m = item['raw_masks']
+                        else:
+                            # leave unknown dict untouched
+                            m = item
                     else:
                         m = item
                     masks.append(m)
@@ -282,15 +296,23 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
             prompt = "objects"
             segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
             
-            if isinstance(segments, dict) and 'segments' in segments:
-                seg_masks = segments['segments']
+            if isinstance(segments, dict):
+                if 'segments' in segments:
+                    seg_masks = segments['segments']
+                elif 'raw_masks' in segments:
+                    seg_masks = list(segments['raw_masks'])
+                else:
+                    seg_masks = [segments]
             else:
                 seg_masks = segments if isinstance(segments, list) else [segments]
 
             # unwrap masks
             masks = []
             for item in seg_masks:
-                masks.append(item['mask'] if isinstance(item, dict) and 'mask' in item else item)
+                if isinstance(item, dict) and 'mask' in item:
+                    masks.append(item['mask'])
+                else:
+                    masks.append(item)
             labels = ["object"] * len(masks)
 
         num_masks = len(masks) if isinstance(masks, list) else 1
