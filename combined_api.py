@@ -702,27 +702,28 @@ async def job_status(job_id: str):
             "module": "layeredsvg",
             "status": job_data.get('status', 'error'),
             "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
-            "svg_url": svg_out,
-            "png_url": png_out,
+            "svg_url": f'/combined_output/{svg_out.replace(OUTPUT_DIR + "/", "")}',
+            "png_url": f'/combined_output/{png_out.replace(OUTPUT_DIR + "/", "")}',
             "error": None,
         }
         
         # re-queue it
-        JOBS[job_id] = {
-            "module": "layeredsvg",
-            "callable": "run_vectorization",
-            "args": [job_id],
-            "kwargs": {
-                "selected_layers": job_data.get("selected_layers"),
-                "quality": job_data.get("quality"),
-            },
-            "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
-            "svg_out": svg_out,
-            "png_out": png_out,
-            "status": "queued",
-            "created_at": time.time(),
-        }
-        JOB_QUEUE.put(job_id)
+        if (job.get("status") != "completed"):
+            JOBS[job_id] = {
+                "module": "layeredsvg",
+                "callable": "run_vectorization",
+                "args": [job_id],
+                "kwargs": {
+                    "selected_layers": job_data.get("selected_layers"),
+                    "quality": job_data.get("quality"),
+                },
+                "ori_url": f'/combined_output/{inp.replace(OUTPUT_DIR + "/", "")}',
+                "svg_out": svg_out,
+                "png_out": png_out,
+                "status": "queued",
+                "created_at": time.time(),
+            }
+            JOB_QUEUE.put(job_id)
 
     return {
         "job_id": job_id,
