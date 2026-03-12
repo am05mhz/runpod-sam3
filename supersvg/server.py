@@ -259,7 +259,7 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
 
             for prompt in label_list:
                 # call inference for each label
-                segments = sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+                segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
 
                 # convert to list of masks
                 if isinstance(segments, dict) and 'segments' in segments:
@@ -275,7 +275,7 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
             # Use text-based segmentation for generic objects
             print("Calling SAM3 directly with text query...")
             prompt = "objects"
-            segments = sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+            segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
             
             if isinstance(segments, dict) and 'segments' in segments:
                 masks = segments['segments']
@@ -1238,8 +1238,8 @@ def worker_thread_loop(worker_idx: int):
                     labels = job.get("labels", None)
 
                     if mode == "layered":
-                        # process_image_sam3 is synchronous and heavy - run in this worker thread
-                        process_image_sam3(
+                        # process_image_sam3 is async - run it using asyncio.run
+                        asyncio.run(process_image_sam3(
                             input_path,
                             svg_path,
                             png_path,
@@ -1248,7 +1248,7 @@ def worker_thread_loop(worker_idx: int):
                             conf_thresh=conf_thresh,
                             num_rounds=num_rounds,
                             quality=quality,
-                        )
+                        ))
                     else:
                         # simple pipeline (no SAM3)
                         n_segments = QUALITY_SETTINGS.get(quality, N_SEGMENTS)
