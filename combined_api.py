@@ -25,8 +25,16 @@ import json
 import queue
 import argparse
 import inspect
+import gc
 from contextlib import asynccontextmanager
 # from longcat import utils as longcat_utils
+
+# Optional torch import for GPU memory clearing
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
 
 # local common utils
 from common_utils import (
@@ -85,6 +93,30 @@ UPLOAD_DIR = str(Path(__file__).parent / "combined_temp")
 OUTPUT_DIR = str(Path(__file__).parent / "combined_output")
 safe_mkdir(UPLOAD_DIR)
 safe_mkdir(OUTPUT_DIR)
+
+
+def clear_gpu_memory():
+    """
+    Clear GPU memory used by modules.
+    Attempts to:
+    - Call cleanup functions on loaded modules
+    - Clear CUDA cache if torch is available
+    - Run garbage collection
+    """
+    try:
+        # Attempt to clear CUDA cache if torch is available
+        if HAS_TORCH and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print("[GPU] CUDA cache cleared")
+    except Exception as e:
+        print(f"[GPU] Error clearing CUDA cache: {e}")
+    
+    try:
+        # Run garbage collection
+        collected = gc.collect()
+        print(f"[GPU] Garbage collection: {collected} objects collected")
+    except Exception as e:
+        print(f"[GPU] Error during garbage collection: {e}")
 
 
 async def worker_loop(worker_idx: int = 0):
@@ -243,6 +275,11 @@ async def worker_loop(worker_idx: int = 0):
                         getattr(module, "unload_supersvg_model")()
                     except Exception:
                         pass
+                # Clear GPU memory after job completes
+                try:
+                    clear_gpu_memory()
+                except Exception:
+                    pass
                 # Release the threading semaphore so next job can proceed
                 try:
                     GPU_SEMAPHORE.release()
@@ -696,6 +733,53 @@ async def job_status(job_id: str):
         "png_url": job.get("png_url"),
         "error": job.get("error"),
     }
+
+@app.post("/gpu/clear")
+async def gpu_clear():
+    """
+    Manually trigger GPU memory clearing.
+    Clears CUDA cache (if available) and runs garbage collection.
+    """
+    try:
+        clear_gpu_memory()
+        return {
+            "status": "success",
+            "message": "GPU memory cleared",
+            "torch_available": HAS_TORCH,
+            "cuda_available": HAS_TORCH and torch.cuda.is_available() if HAS_TORCH else False,
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Failed to clear GPU memory: {str(e)}",
+            }
+        )
+
+@app.get("/gpu/status")
+async def gpu_status():
+    """
+    Get current GPU status and memory information.
+    """
+    status_info = {
+        "torch_available": HAS_TORCH,
+        "cuda_available": False,
+        "cuda_memory_info": None,
+    }
+    
+    if HAS_TORCH and torch.cuda.is_available():
+        status_info["cuda_available"] = True
+        try:
+            status_info["cuda_memory_info"] = {
+                "allocated_mb": torch.cuda.memory_allocated() / 1024 / 1024,
+                "reserved_mb": torch.cuda.memory_reserved() / 1024 / 1024,
+                "max_allocated_mb": torch.cuda.max_memory_allocated() / 1024 / 1024,
+            }
+        except Exception as e:
+            status_info["cuda_memory_error"] = str(e)
+    
+    return status_info
 
 
 if __name__ == "__main__":

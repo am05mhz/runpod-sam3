@@ -968,8 +968,7 @@ def vectorize_confirmed_v13(device, args, output_dir, confirmed_layers, progress
         cairosvg.svg2png(url=final_svg_path, write_to=png_path)
 
         fullsize_png_path = os.path.join(output_dir, "final_fullsize.png")
-        cairosvg.svg2png(url=fullsize_svg_path, write_to=fullsize_png_path,
-                         output_width=W_orig, output_height=H_orig)
+        cairosvg.svg2png(url=fullsize_svg_path, write_to=fullsize_png_path)
     except Exception as e:
         print(f"  Warning: Could not render PNG: {e}")
 
