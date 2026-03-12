@@ -258,35 +258,54 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
                 label_list = [str(use_labels)]
 
             for prompt in label_list:
-                # call inference for each label
-                segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
+                # call inference for each label, respecting the requested confidence threshold
+                segments = await sam3_mod.run_sam_inference(
+                    img_np,
+                    prompt,
+                    None,
+                    None,
+                    None,
+                    0,
+                    conf_thresh,
+                    True,
+                )
 
                 # Handle service-style return structures
                 if isinstance(segments, dict):
-                    if 'segments' in segments:
-                        seg_masks = segments['segments']
-                    elif 'raw_masks' in segments:
-                        # for_svg mode returns raw_masks array
-                        seg_masks = list(segments['raw_masks'])
+                    # for_svg mode returns raw_masks and raw_scores
+                    if 'raw_masks' in segments:
+                        masks_list = list(segments['raw_masks'])
+                        scores_list = list(segments.get('raw_scores', []))
+                    elif 'segments' in segments:
+                        masks_list = segments['segments']
+                        scores_list = []
                     else:
-                        # unknown dict, treat as single item
-                        seg_masks = [segments]
+                        masks_list = [segments]
+                        scores_list = []
                 else:
-                    seg_masks = segments if isinstance(segments, list) else [segments]
+                    masks_list = segments if isinstance(segments, list) else [segments]
+                    scores_list = []
 
-                # unwrap masks from any dict wrappers
-                for item in seg_masks:
+                # unwrap masks from any dict wrappers and apply additional score filtering
+                for idx, item in enumerate(masks_list):
                     if isinstance(item, dict):
                         if 'mask' in item:
                             m = item['mask']
                         elif 'raw_masks' in item:
-                            # should not happen here but guard
                             m = item['raw_masks']
                         else:
-                            # leave unknown dict untouched
                             m = item
                     else:
                         m = item
+
+                    # if we have scores, enforce conf_thresh here as well and log
+                    if scores_list:
+                        score = float(scores_list[idx])
+                        print(f"    prompt '{prompt}' mask {idx} score={score:.3f}")
+                        if score < conf_thresh:
+                            print(f"      -> discarded (below conf_thresh={conf_thresh})")
+                            continue
+
                     masks.append(m)
                     labels.append(prompt)
 
@@ -294,25 +313,47 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
             # Use text-based segmentation for generic objects
             print("Calling SAM3 directly with text query...")
             prompt = "objects"
-            segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
-            
+            segments = await sam3_mod.run_sam_inference(
+                img_np,
+                prompt,
+                None,
+                None,
+                None,
+                0,
+                conf_thresh,
+                True,
+            )
+
             if isinstance(segments, dict):
-                if 'segments' in segments:
-                    seg_masks = segments['segments']
-                elif 'raw_masks' in segments:
+                if 'raw_masks' in segments:
                     seg_masks = list(segments['raw_masks'])
+                    seg_scores = list(segments.get('raw_scores', []))
+                elif 'segments' in segments:
+                    seg_masks = segments['segments']
+                    seg_scores = []
                 else:
                     seg_masks = [segments]
+                    seg_scores = []
             else:
                 seg_masks = segments if isinstance(segments, list) else [segments]
+                seg_scores = []
 
-            # unwrap masks
+            # unwrap masks and apply score filtering if available
             masks = []
-            for item in seg_masks:
+            for idx, item in enumerate(seg_masks):
                 if isinstance(item, dict) and 'mask' in item:
-                    masks.append(item['mask'])
+                    m = item['mask']
                 else:
-                    masks.append(item)
+                    m = item
+
+                if seg_scores:
+                    score = float(seg_scores[idx])
+                    print(f"    generic mask {idx} score={score:.3f}")
+                    if score < conf_thresh:
+                        print(f"      -> discarded (below conf_thresh={conf_thresh})")
+                        continue
+
+                masks.append(m)
             labels = ["object"] * len(masks)
 
         num_masks = len(masks) if isinstance(masks, list) else 1

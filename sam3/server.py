@@ -41,7 +41,7 @@ def loadSam(tracker = false):
         hf_sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
         hf_sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
 
-def unloadSam()
+def unloadSam():
     global hf_sam3_tmodel, hf_sam3_tprocessor, hf_sam3_model, hf_sam3_processor
     hf_sam3_tmodel = None
     hf_sam3_tprocessor = None
