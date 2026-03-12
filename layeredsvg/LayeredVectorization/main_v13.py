@@ -451,7 +451,7 @@ def segment_keywords_v13(image_path, keywords_with_conf, output_dir, progress_cb
                     target_sizes = [[V13_RESOLUTION, V13_RESOLUTION]]
 
                 processed_results = {
-                    "masks": SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0]
+                    "masks": SAM3_PROCESSOR.post_process_masks(inference_output.pred_masks.cpu(), target_sizes)[0],
                     "scores": inference_output.object_score_logits,
                 }
                 raw_masks = processed_results['masks'].cpu().numpy()

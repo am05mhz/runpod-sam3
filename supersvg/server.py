@@ -261,13 +261,18 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
                 # call inference for each label
                 segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
 
-                # convert to list of masks
+                # segments is expected to be a list of dicts like {'mask': np.ndarray, ...}
                 if isinstance(segments, dict) and 'segments' in segments:
                     seg_masks = segments['segments']
                 else:
                     seg_masks = segments if isinstance(segments, list) else [segments]
 
-                for m in seg_masks:
+                # unwrap masks from any dict wrappers
+                for item in seg_masks:
+                    if isinstance(item, dict) and 'mask' in item:
+                        m = item['mask']
+                    else:
+                        m = item
                     masks.append(m)
                     labels.append(prompt)
 
@@ -278,11 +283,15 @@ async def generate_sam3_masks(image_pil, use_labels=None, conf_thresh=0.3, num_r
             segments = await sam3_mod.run_sam_inference(img_np, prompt, None, None, None, 0, 0.8, True)
             
             if isinstance(segments, dict) and 'segments' in segments:
-                masks = segments['segments']
-                labels = ["object"] * len(masks) if isinstance(masks, list) else ["object"]
+                seg_masks = segments['segments']
             else:
-                masks = segments if isinstance(segments, list) else [segments]
-                labels = ["object"] * len(masks)
+                seg_masks = segments if isinstance(segments, list) else [segments]
+
+            # unwrap masks
+            masks = []
+            for item in seg_masks:
+                masks.append(item['mask'] if isinstance(item, dict) and 'mask' in item else item)
+            labels = ["object"] * len(masks)
 
         num_masks = len(masks) if isinstance(masks, list) else 1
         print(f"SAM3 direct call returned {num_masks} masks")
