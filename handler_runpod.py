@@ -104,12 +104,15 @@ async def load_image_from_input(job_input: Dict[str, Any]):
 
 async def call_module_function(module, fn, module_args, module_kwargs):
     """
-    Call an async module function with intelligent argument handling.
+    Call a module function (sync or async) with intelligent argument handling.
     Falls back to different argument combinations if initial call fails.
-    Module functions are expected to be async.
     """
     try:
-        result = await fn(*module_args, **module_kwargs)
+        # Check if function is async
+        if inspect.iscoroutinefunction(fn):
+            result = await fn(*module_args, **module_kwargs)
+        else:
+            result = fn(*module_args, **module_kwargs)
         return result
     except TypeError as te:
         msg = str(te).lower()
@@ -120,7 +123,10 @@ async def call_module_function(module, fn, module_args, module_kwargs):
 
             if accepts_var_kw:
                 try:
-                    result = await fn(*module_args, **module_kwargs)
+                    if inspect.iscoroutinefunction(fn):
+                        result = await fn(*module_args, **module_kwargs)
+                    else:
+                        result = fn(*module_args, **module_kwargs)
                     return result
                 except TypeError:
                     pass
@@ -128,23 +134,38 @@ async def call_module_function(module, fn, module_args, module_kwargs):
             if "unexpected keyword" in msg or "got an unexpected keyword" in msg or "unexpected keyword argument" in msg:
                 allowed = {k: v for k, v in module_kwargs.items() if k in params}
                 if allowed:
-                    result = await fn(*module_args, **allowed)
+                    if inspect.iscoroutinefunction(fn):
+                        result = await fn(*module_args, **allowed)
+                    else:
+                        result = fn(*module_args, **allowed)
                     return result
                 else:
-                    result = await fn(*module_args)
+                    if inspect.iscoroutinefunction(fn):
+                        result = await fn(*module_args)
+                    else:
+                        result = fn(*module_args)
                     return result
 
-            result = await fn(*module_args)
+            if inspect.iscoroutinefunction(fn):
+                result = await fn(*module_args)
+            else:
+                result = fn(*module_args)
             return result
         except Exception as sig_error:
             print(f"Warning: inspect.signature failed: {sig_error}")
             print(f"Original TypeError: {te}")
             try:
-                result = await fn(*module_args, **module_kwargs)
+                if inspect.iscoroutinefunction(fn):
+                    result = await fn(*module_args, **module_kwargs)
+                else:
+                    result = fn(*module_args, **module_kwargs)
                 return result
             except TypeError:
                 print("Fallback: calling without kwargs")
-                result = await fn(*module_args)
+                if inspect.iscoroutinefunction(fn):
+                    result = await fn(*module_args)
+                else:
+                    result = fn(*module_args)
                 return result
 
 
