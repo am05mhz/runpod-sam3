@@ -26,10 +26,27 @@ load_dotenv()
 print("Loading SAM3 model...")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-hf_sam3_tmodel = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
-hf_sam3_tprocessor = Sam3TrackerProcessor.from_pretrained("facebook/sam3")
-hf_sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
-hf_sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
+hf_sam3_tmodel = None
+hf_sam3_tprocessor = None
+hf_sam3_model = None
+hf_sam3_processor = None
+
+def loadSam(tracker = false):
+    if tracker:
+        global hf_sam3_tmodel, hf_sam3_tprocessor
+        hf_sam3_tmodel = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
+        hf_sam3_tprocessor = Sam3TrackerProcessor.from_pretrained("facebook/sam3")
+    else :
+        global hf_sam3_model, hf_sam3_processor
+        hf_sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
+        hf_sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
+
+def unloadSam()
+    global hf_sam3_tmodel, hf_sam3_tprocessor, hf_sam3_model, hf_sam3_processor
+    hf_sam3_tmodel = None
+    hf_sam3_tprocessor = None
+    hf_sam3_model = None
+    hf_sam3_processor = None
 
 print("SAM3 model loaded.")
 
@@ -206,6 +223,7 @@ async def run_sam_inference(
             print("forsvg", for_svg)
 
             if for_svg or prompt is not None or (box is None and points is None):
+                loadSam()
                 # Build inputs for processor
                 # boxes and labels must be lists for HF API
                 hf_inputs = hf_sam3_processor(
@@ -237,6 +255,8 @@ async def run_sam_inference(
                     }
 
             else:
+                loadSam(tracker=True)
+
                 labels = (point_labels or [1] * len(points)) if points else None
                 hf_inputs = hf_sam3_tprocessor(
                     images=pil_img,
