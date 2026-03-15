@@ -31,7 +31,7 @@ hf_sam3_tprocessor = None
 hf_sam3_model = None
 hf_sam3_processor = None
 
-def loadSam(tracker = false):
+def loadSam(tracker = False):
     if tracker:
         global hf_sam3_tmodel, hf_sam3_tprocessor
         hf_sam3_tmodel = Sam3TrackerModel.from_pretrained("facebook/sam3").to(device)
@@ -40,6 +40,7 @@ def loadSam(tracker = false):
         global hf_sam3_model, hf_sam3_processor
         hf_sam3_model = Sam3Model.from_pretrained("facebook/sam3").to(device)
         hf_sam3_processor = Sam3Processor.from_pretrained("facebook/sam3")
+    print("SAM3 model loaded.")
 
 def unloadSam():
     global hf_sam3_tmodel, hf_sam3_tprocessor, hf_sam3_model, hf_sam3_processor
@@ -48,7 +49,6 @@ def unloadSam():
     hf_sam3_model = None
     hf_sam3_processor = None
 
-print("SAM3 model loaded.")
 
 app = FastAPI(title="SAM segmentation server")
 
