@@ -37,16 +37,21 @@ from typing import Dict, Any
 import numpy as np
 
 def sanitize_for_json(obj):
-    """Recursively convert numpy arrays (and other non-serializable types) to JSON-friendly forms."""
-    if isinstance(obj, np.ndarray):
+    """Recursively convert non-serializable types to JSON-friendly forms."""
+    if isinstance(obj, Path):
+        return str(obj)
+    elif isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [sanitize_for_json(v) for v in obj]
-    elif isinstance(obj, tuple):
-        return [sanitize_for_json(v) for v in obj]
-    # add more conversions if needed
+        # Convert Path keys to strings and sanitize values recursively
+        sanitized = {}
+        for key, value in obj.items():
+            new_key = str(key) if isinstance(key, Path) else key
+            sanitized[new_key] = sanitize_for_json(value)
+        return sanitized
+    elif isinstance(obj, (list, tuple, set)):
+        # Convert all elements recursively; JSON only supports lists
+        return [sanitize_for_json(item) for item in obj]
     else:
         return obj
 
