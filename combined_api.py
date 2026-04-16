@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import asyncio
 import shutil
@@ -77,6 +78,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Combined API - supersvg | sam3 | bezier | layeredsvg",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -291,6 +295,13 @@ async def worker_loop(worker_idx: int = 0):
         finally:
             pass
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+    
 @app.get("/")
 async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})

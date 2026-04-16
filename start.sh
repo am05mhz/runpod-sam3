@@ -189,6 +189,11 @@ call_python_handler() {
     python $WORKSPACE_DIR/handler_runpod.py
 }
 
+copy_setup() {
+    echo "copying apps..."
+    cp -r $WORKSPACE_DIR/apps $RP_WORKSPACE_DIR/apps
+}
+
 # ---------------------------------------------------------------------------- #
 #                               Main Program                                   #
 # ---------------------------------------------------------------------------- #
@@ -198,6 +203,7 @@ call_python_handler() {
 echo "Pod Started"
 
 setup_ssh
+copy_setup
 # setup_sam3
 # setup_supersvg
 # setup_layeredsvg

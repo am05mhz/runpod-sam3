@@ -271,7 +271,7 @@ def run_vectorization(run_id, **kwargs):
                 'status': 'completed',
                 'n_vectorized': result.get('n_layers', 0),
                 'result_svg': result.get('svg_path', ''),
-                'result_png': result.get('svg_path', ''),
+                'result_png': result.get('png_path', ''),
                 'result_layers': result.get('layers', [])
             }
 
