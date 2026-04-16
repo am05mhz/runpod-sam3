@@ -191,7 +191,7 @@ call_python_handler() {
 
 copy_setup() {
     echo "copying apps..."
-    cp -r $WORKSPACE_DIR/apps $RP_WORKSPACE_DIR/apps
+    cp -r $WORKSPACE_DIR $RP_WORKSPACE_DIR/apps
 }
 
 # ---------------------------------------------------------------------------- #
