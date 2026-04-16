@@ -194,7 +194,7 @@ copy_setup() {
     if [ ! -d "$RP_WORKSPACE/apps" ]; then
         mkdir -p $RP_WORKSPACE/apps
     fi
-    cp -r $WORKSPACE_DIR/* $RP_WORKSPACE_DIR/apps/
+    cp -r $WORKSPACE_DIR/* $RP_WORKSPACE/apps/
 }
 
 # ---------------------------------------------------------------------------- #
